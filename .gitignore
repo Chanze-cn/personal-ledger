@@ -1,0 +1,15 @@
+# Python 虚拟环境与缓存
+.venv/
+__pycache__/
+*.py[cod]
+
+# 前端依赖与构建产物
+frontend/node_modules/
+frontend/dist/
+
+# 运行时数据与密钥（数据库、RSA 私钥）
+backend/data/
+
+# 系统与本地环境
+.DS_Store
+.env
