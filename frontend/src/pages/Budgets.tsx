@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   CalendarClock,
+  ChevronDown,
   Layers,
   Pencil,
   Plus,
@@ -69,12 +70,17 @@ export default function Budgets() {
   const [tick, setTick] = useState(0);
 
   const budgetsQuery = useQuery<BudgetGroups>(() => api.budgets(kind), [kind, version, tick]);
-  const categoriesQuery = useQuery(() => api.categories(), [version]);
+  const categoriesQuery = useQuery(() => api.categories(false, true), [version]);
 
-  const categories: Category[] = useMemo(
+  /** 一级品类 + 其子品类，供下拉分组展示；选一级品类表示按整组统计 */
+  const categoryGroups: Category[] = useMemo(
     () => (categoriesQuery.data ?? []).filter((item) => item.kind === kind),
     [categoriesQuery.data, kind],
   );
+  const selectedCategory = categoryGroups
+    .flatMap((group) => [group, ...(group.children ?? [])])
+    .find((item) => String(item.id) === form.categoryId);
+  const selectedIsGroup = Boolean(selectedCategory && (selectedCategory.children?.length ?? 0) > 0);
   const groups = budgetsQuery.data;
   const totals = groups?.totals ?? [];
   const standalone = groups?.standalone ?? [];
@@ -355,12 +361,31 @@ export default function Budgets() {
                   className="field"
                 >
                   <option value="">请选择品类</option>
-                  {categories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.emoji} {category.name}
-                    </option>
-                  ))}
+                  {categoryGroups.map((group) =>
+                    (group.children ?? []).length > 0 ? (
+                      <optgroup key={group.id} label={`${group.emoji} ${group.name}`}>
+                        <option value={group.id}>{group.emoji} {group.name}（整组）</option>
+                        {(group.children ?? []).map((child) => (
+                          <option key={child.id} value={child.id}>
+                            {child.emoji} {child.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ) : (
+                      <option key={group.id} value={group.id}>
+                        {group.emoji} {group.name}
+                      </option>
+                    ),
+                  )}
                 </select>
+                <p className="mt-1.5 text-[11px] text-slate-400">
+                  {selectedIsGroup
+                    ? '已选一级品类，已用金额统计该品类下全部子品类'
+                    : '可以选一级品类做整组预算，也可以精确到某个子品类'}
+                </p>
+                <p className="mt-1 text-[11px] text-slate-400">
+                  同一一级品类下同时存在整组预算和子预算时，该组按两者较大值计算额度
+                </p>
               </div>
 
               <div>
@@ -532,6 +557,17 @@ function TotalBudgetCard({
   const over = budget.ratio >= 100;
   const warn = budget.ratio >= 80;
   const color = over ? '#e11d48' : warn ? '#f59e0b' : '#4f46e5';
+  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+  const groups = budget.groups ?? [];
+
+  const toggleGroup = (key: number) => {
+    setCollapsed((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   return (
     <Card className="p-5">
@@ -593,7 +629,8 @@ function TotalBudgetCard({
           </p>
           {budget.overridden && (
             <p className="mt-1 text-[11px] text-amber-700">
-              填写额度 {money(budget.amount)}，品类子预算合计 {money(budget.children_total)}
+              填写额度 {money(budget.amount)}，品类子预算合计{' '}
+              {money(budget.children_total)}（按一级品类分组取较大值）
             </p>
           )}
         </div>
@@ -620,57 +657,124 @@ function TotalBudgetCard({
             还没有品类子预算，可以按品类拆解这份总预算
           </p>
         ) : (
-          <div className="divide-y divide-slate-100">
-            {budget.children.map((child) => {
-              const childOver = child.ratio >= 100;
-              const childWarn = child.ratio >= 80;
+          <div className="space-y-2">
+            {groups.map((group) => {
+              const open = !collapsed.has(group.key);
+              const groupRatio = group.amount > 0 ? (group.used / group.amount) * 100 : 0;
+              const groupOver = groupRatio >= 100;
               return (
-                <div key={child.id} className="flex items-center gap-3 py-2.5">
-                  <span
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[14px]"
-                    style={{ background: `${child.category_color}18` }}
+                <div
+                  key={group.key}
+                  className="overflow-hidden rounded-lg border border-slate-100 bg-white/80"
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(group.key)}
+                    className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left transition hover:bg-slate-50/60"
                   >
-                    {child.category_emoji}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-[12.5px] font-medium text-slate-700">
-                        {child.category_name}
-                      </span>
-                      <span className="tnum shrink-0 text-[11.5px] text-slate-500">
-                        <span className={childOver ? 'text-expense' : 'text-slate-700'}>
-                          {money(child.used)}
+                    <ChevronDown
+                      size={12}
+                      className={`shrink-0 text-slate-400 transition ${open ? '' : '-rotate-90'}`}
+                    />
+                    <span
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[13px]"
+                      style={{ background: `${group.color}18` }}
+                    >
+                      {group.emoji}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex flex-wrap items-center gap-1.5">
+                        <span className="truncate text-[12.5px] font-medium text-slate-700">
+                          {group.name}
                         </span>
-                        {' / '}
-                        {money(child.amount)}
+                        <span className="chip bg-slate-100 text-[9.5px] text-slate-500">
+                          {group.children.length} 项
+                        </span>
+                        {group.has_whole && group.children.length > 1 && (
+                          <span className="chip bg-indigo-50 text-[9.5px] text-indigo-600">
+                            含整组预算 · 取较大额度
+                          </span>
+                        )}
                       </span>
+                      {group.overridden && (
+                        <span className="mt-0.5 block text-[10px] text-amber-700">
+                          子预算合计 {money(group.items_total)} 高于整组 {money(group.whole_amount)}
+                          ，按合计执行
+                        </span>
+                      )}
+                    </span>
+                    <span className="tnum shrink-0 text-[11px] text-slate-500">
+                      <span className={groupOver ? 'text-expense' : 'text-slate-700'}>
+                        {money(group.used)}
+                      </span>
+                      {' / '}
+                      {money(group.amount)}
+                    </span>
+                  </button>
+
+                  {open && (
+                    <div className="divide-y divide-slate-100 border-t border-slate-100 px-2.5 py-1">
+                      {group.children.map((child) => {
+                        const childOver = child.ratio >= 100;
+                        const childWarn = child.ratio >= 80;
+                        const isWhole = child.category_id === group.key;
+                        return (
+                          <div key={child.id} className="flex items-center gap-3 py-2.5">
+                            <span
+                              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[14px]"
+                              style={{ background: `${child.category_color}18` }}
+                            >
+                              {child.category_emoji}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] font-medium text-slate-700">
+                                  <span className="truncate">{child.category_name}</span>
+                                  {isWhole && (
+                                    <span className="chip shrink-0 bg-indigo-50 text-[9px] text-indigo-600">
+                                      整组
+                                    </span>
+                                  )}
+                                </span>
+                                <span className="tnum shrink-0 text-[11.5px] text-slate-500">
+                                  <span className={childOver ? 'text-expense' : 'text-slate-700'}>
+                                    {money(child.used)}
+                                  </span>
+                                  {' / '}
+                                  {money(child.amount)}
+                                </span>
+                              </div>
+                              <div className="mt-1.5">
+                                <Progress
+                                  value={child.ratio}
+                                  tone={childOver ? 'expense' : childWarn ? 'warn' : 'brand'}
+                                  height="h-1.5"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-0.5">
+                              <button
+                                type="button"
+                                onClick={() => onEdit(child)}
+                                className="rounded-lg p-1 text-slate-300 transition hover:bg-indigo-50 hover:text-indigo-600"
+                                title="编辑"
+                              >
+                                <Pencil size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onDelete(child)}
+                                className="rounded-lg p-1 text-slate-300 transition hover:bg-rose-50 hover:text-rose-600"
+                                title="删除"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <div className="mt-1.5">
-                      <Progress
-                        value={child.ratio}
-                        tone={childOver ? 'expense' : childWarn ? 'warn' : 'brand'}
-                        height="h-1.5"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-0.5">
-                    <button
-                      type="button"
-                      onClick={() => onEdit(child)}
-                      className="rounded-lg p-1 text-slate-300 transition hover:bg-indigo-50 hover:text-indigo-600"
-                      title="编辑"
-                    >
-                      <Pencil size={13} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onDelete(child)}
-                      className="rounded-lg p-1 text-slate-300 transition hover:bg-rose-50 hover:text-rose-600"
-                      title="删除"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
+                  )}
                 </div>
               );
             })}
@@ -708,6 +812,7 @@ function StandaloneCard({
             <p className="truncate text-[14px] font-medium text-ink">{budget.name}</p>
             <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-400">
               <CalendarClock size={11} />
+              {budget.category_parent_name ? `${budget.category_parent_name} › ` : ''}
               {budget.period_label}
               <span className="text-slate-300">·</span>
               独立预算

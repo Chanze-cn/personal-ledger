@@ -25,25 +25,55 @@ from ..services.jobs import rebuild_job
 
 router = APIRouter(prefix="/system", tags=["system"])
 
-# 品类 -> (候选金额, 每日出现概率, 备注候选)
+# 末级（子）品类 -> (候选金额, 每日出现概率, 备注候选)，用于演示两级品类效果
 DEMO_TEMPLATES: dict[str, tuple[list[float], float, list[str]]] = {
-    "餐饮": ([18, 26, 32, 45, 58, 88], 1.0, ["早餐", "午饭", "晚饭", "咖啡", "外卖", "和朋友吃饭"]),
-    "交通": ([3, 6, 12, 20, 38], 0.55, ["地铁", "公交", "打车", "加油"]),
-    "购物": ([59, 129, 219, 399, 699], 0.18, ["日用补给", "衣服", "数码配件", "家居好物"]),
-    "居住": ([2200, 260], 0.03, ["房租", "物业费"]),
-    "娱乐": ([45, 68, 128, 25], 0.2, ["电影", "演出", "游戏", "会员续费"]),
-    "医疗": ([36, 88, 160], 0.05, ["药品", "门诊", "体检"]),
-    "学习": ([99, 199, 45], 0.08, ["课程", "书籍", "订阅"]),
-    "通讯": ([59, 99], 0.04, ["话费", "宽带"]),
-    "旅行": ([580, 1280], 0.03, ["周末出行", "机票", "住宿"]),
-    "宠物": ([65, 120], 0.05, ["猫粮", "宠物医院"]),
-    "人情": ([200, 520, 66], 0.05, ["红包", "生日礼物", "聚餐 AA"]),
+    "早餐": ([8, 12, 15, 18], 0.8, ["豆浆油条", "三明治", "楼下面包"]),
+    "午餐": ([22, 28, 35, 45], 0.9, ["公司食堂", "盖饭", "面馆"]),
+    "晚餐": ([25, 38, 52, 68], 0.6, ["家常菜", "火锅", "和朋友吃饭"]),
+    "外卖": ([26, 35, 48], 0.35, ["加班外卖", "夜宵"]),
+    "饮料咖啡": ([9, 15, 22, 32], 0.5, ["瑞幸", "奶茶", "星巴克"]),
+    "零食": ([8, 16, 25], 0.25, ["便利店零食"]),
+    "地铁公交": ([3, 4, 6], 0.75, ["通勤"]),
+    "打车": ([18, 26, 42], 0.2, ["加班打车"]),
+    "加油": ([260, 380], 0.04, ["加油"]),
+    "停车": ([5, 10], 0.08, ["停车费"]),
+    "日用百货": ([29, 59, 129], 0.12, ["超市补给", "纸品"]),
+    "服饰": ([159, 299, 599], 0.06, ["衣服", "鞋子"]),
+    "数码配件": ([99, 399], 0.03, ["耳机", "数据线"]),
+    "美妆护肤": ([89, 199], 0.05, ["护肤"]),
+    "房租": ([2200], 0.03, ["月租"]),
+    "物业": ([180], 0.03, ["物业费"]),
+    "水电燃气": ([68, 128], 0.05, ["电费", "燃气费"]),
+    "家居": ([45, 159], 0.05, ["收纳", "小家具"]),
+    "电影": ([35, 45], 0.07, ["电影票"]),
+    "游戏": ([30, 68], 0.05, ["游戏充值"]),
+    "演出": ([120, 280], 0.02, ["livehouse"]),
+    "门诊": ([36, 88], 0.02, ["挂号"]),
+    "药品": ([25, 46], 0.03, ["常备药"]),
+    "体检": ([360], 0.02, ["年度体检"]),
+    "书籍": ([39, 68], 0.04, ["买书"]),
+    "课程": ([99, 199], 0.03, ["网课"]),
+    "考试": ([120], 0.02, ["报名费"]),
+    "话费": ([39, 59], 0.04, ["月租套餐"]),
+    "宽带": ([60], 0.02, ["宽带续费"]),
+    "会员订阅": ([15, 25, 45], 0.07, ["视频会员", "音乐会员"]),
+    "礼物": ([88, 199], 0.03, ["生日礼物"]),
+    "红包支出": ([100, 200], 0.03, ["随礼"]),
 }
 INCOME_TEMPLATES: dict[str, tuple[list[float], float, list[str]]] = {
-    "工资": ([18600], 1.0, ["月薪"]),
-    "理财": ([120, 260, 580], 0.25, ["基金分红", "利息"]),
-    "兼职": ([800, 1500], 0.1, ["外包项目"]),
+    "月薪": ([18600], 1.0, ["月薪"]),
+    "利息": ([120, 260], 0.2, ["存款利息"]),
+    "基金股票": ([180, 580], 0.15, ["基金分红"]),
+    "外包": ([800, 1500], 0.08, ["外包项目"]),
 }
+
+# 演示预算：(品类名, 额度元)；None 表示不绑品类
+DEMO_BUDGETS: list[tuple[str | None, float]] = [
+    (None, 8000),
+    ("餐饮", 2500),
+    ("早餐", 300),
+    ("交通", 800),
+]
 
 
 @router.get("/info", summary="系统运行信息")
@@ -87,40 +117,42 @@ def system_info(
     }
 
 
-@router.post("/demo-data", summary="生成示例数据（40 天，可选操作）")
+@router.post("/demo-data", summary="生成示例数据（40 天，含两级品类与示例预算）")
 def generate_demo_data(
     user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> dict:
-    categories = db.scalars(select(Category).where(Category.user_id == user.id)).all()
+    categories = db.scalars(
+        select(Category).where(Category.user_id == user.id, Category.is_archived.is_(False))
+    ).all()
     by_name: dict[tuple[str, str], Category] = {(c.name, c.kind): c for c in categories}
 
     rng = random.Random(20261116)
     today = dt.date.today()
     created = 0
+    budgets_created = 0
     with WRITE_LOCK:
         for offset in range(39, -1, -1):
             day = today - dt.timedelta(days=offset)
             for name, (amounts, probability, notes) in DEMO_TEMPLATES.items():
                 category = by_name.get((name, "expense"))
-                if category is None or rng.random() > probability:
+                # 只往末级品类记账，父品类不参与示例数据
+                if category is None or category.parent_id is None or rng.random() > probability:
                     continue
-                times = 2 if name == "餐饮" and rng.random() < 0.5 else 1
-                for _ in range(times):
-                    db.add(
-                        Transaction(
-                            user_id=user.id,
-                            category_id=category.id,
-                            kind="expense",
-                            amount_cents=int(round(rng.choice(amounts) * 100)),
-                            occurred_on=day,
-                            note=rng.choice(notes),
-                        )
+                db.add(
+                    Transaction(
+                        user_id=user.id,
+                        category_id=category.id,
+                        kind="expense",
+                        amount_cents=int(round(rng.choice(amounts) * 100)),
+                        occurred_on=day,
+                        note=rng.choice(notes),
                     )
-                    created += 1
+                )
+                created += 1
             if day.day == 10:
                 for name, (amounts, _probability, notes) in INCOME_TEMPLATES.items():
                     category = by_name.get((name, "income"))
-                    if category is None:
+                    if category is None or category.parent_id is None:
                         continue
                     db.add(
                         Transaction(
@@ -133,10 +165,44 @@ def generate_demo_data(
                         )
                     )
                     created += 1
+
+        # 没有任何预算时，创建一套「总预算 + 一级/二级品类预算」用于验证层级统计
+        has_budget = db.scalar(
+            select(func.count(Budget.id)).where(Budget.user_id == user.id)
+        )
+        if not int(has_budget or 0):
+            total_budget: Budget | None = None
+            for name, amount in DEMO_BUDGETS:
+                category = by_name.get((name, "expense")) if name else None
+                if name and category is None:
+                    continue
+                budget = Budget(
+                    user_id=user.id,
+                    parent_id=total_budget.id if total_budget else None,
+                    name="",
+                    category_id=category.id if category else None,
+                    kind="expense",
+                    period_type="month",
+                    anchor_date=today.replace(day=1),
+                    amount_cents=int(round(amount * 100)),
+                )
+                db.add(budget)
+                db.flush()
+                budgets_created += 1
+                if total_budget is None:
+                    total_budget = budget
         db.commit()
 
     job_id = rebuild_job(user.id, trigger="system")
-    return {"job_id": job_id, "created": created, "message": f"已生成 {created} 笔示例流水，正在重建切片"}
+    message = f"已生成 {created} 笔示例流水"
+    if budgets_created:
+        message += f"、{budgets_created} 个示例预算"
+    return {
+        "job_id": job_id,
+        "created": created,
+        "budgets_created": budgets_created,
+        "message": f"{message}，正在重建切片",
+    }
 
 
 @router.delete("/data", summary="清空当前用户的业务数据（保留品类）")

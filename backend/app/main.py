@@ -1,4 +1,4 @@
-"""应用入口：建表、初始化账号、启动加密组件与定时调度、托管前端静态资源。"""
+"""应用入口：建表、启动加密组件与定时调度、托管前端静态资源。"""
 
 from __future__ import annotations
 
@@ -13,20 +13,18 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import APP_NAME, APP_TAGLINE, AUTH_KEY_PATH, FRONTEND_DIST
 from .crypto_transport import TransportCrypto
-from .database import SessionLocal, engine
+from .database import engine, ensure_schema
 from .models import Base
 from .routers import auth, budgets, categories, jobs, stats, system, transactions
 from .services.jobs import schedule_startup_calibration
 from .services.scheduler import scheduler
-from .services.seed import ensure_seed
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    ensure_schema()
     Base.metadata.create_all(engine)
     app.state.crypto = TransportCrypto(AUTH_KEY_PATH)
-    with SessionLocal() as session:
-        ensure_seed(session)
     await asyncio.to_thread(schedule_startup_calibration)
     scheduler.start()
     try:
@@ -82,11 +80,12 @@ def meta() -> dict:
         "tagline": APP_TAGLINE,
         "version": "1.0.0",
         "features": [
-            "emoji 自定义品类与极速记账（整页 + ⌘K 弹窗）",
+            "两级品类 + 常用快捷 + 品类搜索的极速记账（整页 + ⌘K 弹窗）",
             "周 / 月 / 年报表，含环比、同比、星期分布与日历热力",
             "流水驱动的日 / 周 / 月 / 年统计切片",
             "总预算 + 品类子预算的两级预算体系",
             "登录凭据 RSA-OAEP + AES-GCM 加密传输",
+            "多账号注册与数据隔离",
             "异步任务中心与全量重建",
         ],
     }

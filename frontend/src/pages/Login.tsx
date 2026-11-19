@@ -7,28 +7,50 @@ import {
   Fingerprint,
   Loader2,
   LockKeyhole,
+  UserPlus,
   UserRound,
 } from 'lucide-react';
 import { CursorGlow } from '../components/CursorGlow';
 import { useAuth } from '../context/AuthContext';
 
+type Mode = 'login' | 'register';
+
 export default function Login() {
-  const { user, login, loading } = useAuth();
+  const { user, login, register, loading } = useAuth();
   const navigate = useNavigate();
+  const [mode, setMode] = useState<Mode>('login');
   const [username, setUsername] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   if (!loading && user) return <Navigate to="/app" replace />;
 
+  const isRegister = mode === 'register';
+
+  const switchMode = () => {
+    setMode(isRegister ? 'login' : 'register');
+    setError(null);
+    setConfirmPassword('');
+  };
+
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (submitting) return;
+    if (isRegister && password !== confirmPassword) {
+      setError('两次输入的密码不一致');
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
-      await login(username.trim(), password);
+      if (isRegister) {
+        await register(username.trim(), password, displayName.trim());
+      } else {
+        await login(username.trim(), password);
+      }
       navigate('/app', { replace: true });
     } catch (err) {
       setError((err as Error).message);
@@ -70,6 +92,7 @@ export default function Login() {
               'emoji 品类 + ⌘K 极速记账',
               '总预算 + 品类子预算，超额自动提示',
               '周 / 月 / 年报表，含环比与同比',
+              '多账号数据隔离，注册即用',
             ].map((item) => (
               <li key={item} className="flex items-center gap-2">
                 <CheckCircle2 size={14} className="text-emerald-400/80" />
@@ -85,12 +108,36 @@ export default function Login() {
               L
             </span>
             <div>
-              <p className="text-[15px] font-semibold tracking-tight text-white">登录 Ledger</p>
-              <p className="text-[11px] text-slate-500">继续你的记账</p>
+              <p className="text-[15px] font-semibold tracking-tight text-white">
+                {isRegister ? '注册新账号' : '登录 Ledger'}
+              </p>
+              <p className="text-[11px] text-slate-500">
+                {isRegister ? '注册后立即登录' : '继续你的记账'}
+              </p>
             </div>
           </div>
 
           <form onSubmit={submit} className="mt-7 space-y-4">
+            {isRegister && (
+              <div>
+                <label className="mb-1.5 block text-[11px] font-medium tracking-wide text-slate-400">
+                  昵称（可选）
+                </label>
+                <div className="relative">
+                  <UserPlus
+                    size={15}
+                    className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"
+                  />
+                  <input
+                    value={displayName}
+                    onChange={(event) => setDisplayName(event.target.value)}
+                    placeholder="用于页面展示，留空则与账号一致"
+                    autoComplete="nickname"
+                    className="w-full rounded-xl border border-white/10 bg-white/[0.03] py-3 pl-10 pr-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-indigo-400/60 focus:bg-white/[0.05] focus:ring-4 focus:ring-indigo-500/10"
+                  />
+                </div>
+              </div>
+            )}
             <div>
               <label className="mb-1.5 block text-[11px] font-medium tracking-wide text-slate-400">
                 账号
@@ -104,7 +151,7 @@ export default function Login() {
                   autoFocus
                   value={username}
                   onChange={(event) => setUsername(event.target.value)}
-                  placeholder="chanzezheng"
+                  placeholder={isRegister ? '3-32 位中英文、数字、_ 或 -' : '请输入账号'}
                   autoComplete="username"
                   className="w-full rounded-xl border border-white/10 bg-white/[0.03] py-3 pl-10 pr-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-indigo-400/60 focus:bg-white/[0.05] focus:ring-4 focus:ring-indigo-500/10"
                 />
@@ -123,12 +170,33 @@ export default function Login() {
                   type="password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
-                  placeholder="••••••"
-                  autoComplete="current-password"
+                  placeholder={isRegister ? '至少 6 位' : '••••••'}
+                  autoComplete={isRegister ? 'new-password' : 'current-password'}
                   className="w-full rounded-xl border border-white/10 bg-white/[0.03] py-3 pl-10 pr-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-indigo-400/60 focus:bg-white/[0.05] focus:ring-4 focus:ring-indigo-500/10"
                 />
               </div>
             </div>
+            {isRegister && (
+              <div>
+                <label className="mb-1.5 block text-[11px] font-medium tracking-wide text-slate-400">
+                  确认密码
+                </label>
+                <div className="relative">
+                  <LockKeyhole
+                    size={15}
+                    className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"
+                  />
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                    placeholder="再次输入密码"
+                    autoComplete="new-password"
+                    className="w-full rounded-xl border border-white/10 bg-white/[0.03] py-3 pl-10 pr-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-indigo-400/60 focus:bg-white/[0.05] focus:ring-4 focus:ring-indigo-500/10"
+                  />
+                </div>
+              </div>
+            )}
 
             {error && (
               <p className="rounded-lg border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-300">
@@ -142,7 +210,7 @@ export default function Login() {
               className="group flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 py-3 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-60"
             >
               {submitting ? <Loader2 size={16} className="animate-spin" /> : null}
-              {submitting ? '登录中' : '登录'}
+              {submitting ? (isRegister ? '注册中' : '登录中') : isRegister ? '注册并登录' : '登录'}
               {!submitting && (
                 <ArrowRight size={15} className="transition group-hover:translate-x-1" />
               )}
@@ -156,10 +224,13 @@ export default function Login() {
             </p>
           </div>
 
-          <div className="mt-4 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-3">
-            <p className="text-[11px] text-slate-500">初始账号</p>
-            <p className="mt-1 font-mono text-[12px] text-slate-300">chanzezheng / 123456</p>
-          </div>
+          <button
+            type="button"
+            onClick={switchMode}
+            className="mt-4 flex w-full items-center justify-center gap-1 rounded-xl border border-white/10 py-2.5 text-[12px] text-slate-400 transition hover:border-white/20 hover:text-slate-200"
+          >
+            {isRegister ? '已有账号？返回登录' : '还没有账号？注册新账号'}
+          </button>
 
           <p className="mt-5 text-center text-[11px] text-slate-600 lg:hidden">
             <Link to="/" className="underline-offset-2 hover:text-slate-400 hover:underline">

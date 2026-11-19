@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import re
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -20,8 +21,14 @@ from ..deps import get_current_user
 from ..models import AuthNonce, User, now
 from ..schemas import SealedPayload, TokenOut, UserOut, UserUpdate
 from ..security import create_access_token, hash_password, verify_password
+from ..services.seed import ensure_default_categories
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# 账号规则：3-32 位中英文、数字、下划线或短横线
+USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_\-\u4e00-\u9fa5]{3,32}$")
+MIN_PASSWORD_LENGTH = 6
+MAX_PASSWORD_LENGTH = 128
 
 
 def _crypto(request: Request) -> TransportCrypto:
@@ -103,6 +110,50 @@ def login(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="账号或密码不正确")
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="账号已被停用")
+    token = create_access_token(user.id, user.username)
+    return TokenOut(access_token=token, user=UserOut.model_validate(user))
+
+
+@router.post("/register", response_model=TokenOut, summary="加密提交注册新账号")
+def register(
+    sealed: SealedPayload, request: Request, db: Session = Depends(get_db)
+) -> TokenOut:
+    """注册成功后直接返回登录令牌，并自动铺一套默认品类（不含流水与预算）。"""
+    payload = _open_payload(request, sealed, db)
+    username = str(payload.get("username") or "").strip()
+    password = str(payload.get("password") or "")
+    display_name = str(payload.get("display_name") or "").strip()
+
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="账号与密码不能为空")
+    if not USERNAME_PATTERN.fullmatch(username):
+        raise HTTPException(
+            status_code=400, detail="账号需为 3-32 位中英文、数字、下划线或短横线"
+        )
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise HTTPException(status_code=400, detail=f"密码至少 {MIN_PASSWORD_LENGTH} 位")
+    if len(password) > MAX_PASSWORD_LENGTH:
+        raise HTTPException(status_code=400, detail=f"密码不能超过 {MAX_PASSWORD_LENGTH} 位")
+
+    password_hash = hash_password(password)
+    with WRITE_LOCK:
+        if db.scalar(select(User.id).where(User.username == username)) is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="该账号已被注册，请换一个"
+            )
+        user = User(
+            username=username,
+            password_hash=password_hash,
+            display_name=display_name or username,
+            role="user",
+            avatar_emoji="🙂",
+            currency="CNY",
+        )
+        db.add(user)
+        db.flush()
+        ensure_default_categories(db, user.id)
+        db.commit()
+
     token = create_access_token(user.id, user.username)
     return TokenOut(access_token=token, user=UserOut.model_validate(user))
 

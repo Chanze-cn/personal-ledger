@@ -108,6 +108,7 @@ def _execute(job_id: int, fn: Callable[[JobProgress, dict], str], payload: dict)
     duration = int((time.perf_counter() - started) * 1000)
     with WRITE_LOCK, SessionLocal() as db:
         job = db.get(JobRun, job_id)
+        job_user_id = job.user_id if job else None
         if job:
             job.status = status
             job.progress = 1.0 if status == "success" else job.progress
@@ -116,13 +117,22 @@ def _execute(job_id: int, fn: Callable[[JobProgress, dict], str], payload: dict)
             job.duration_ms = duration
             job.finished_at = now()
             db.commit()
-        _cleanup_history(db)
+        _cleanup_history(db, job_user_id)
 
 
-def _cleanup_history(db: Session) -> None:
-    threshold = db.scalar(select(JobRun.id).order_by(JobRun.id.desc()).offset(MAX_HISTORY).limit(1))
+def _cleanup_history(db: Session, user_id: int | None) -> None:
+    """按账号各自保留最近 MAX_HISTORY 条任务记录，避免不同用户互相挤占历史。"""
+    if user_id is None:
+        return
+    threshold = db.scalar(
+        select(JobRun.id)
+        .where(JobRun.user_id == user_id)
+        .order_by(JobRun.id.desc())
+        .offset(MAX_HISTORY)
+        .limit(1)
+    )
     if threshold:
-        db.execute(delete(JobRun).where(JobRun.id <= threshold))
+        db.execute(delete(JobRun).where(JobRun.user_id == user_id, JobRun.id <= threshold))
         db.commit()
 
 

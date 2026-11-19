@@ -95,6 +95,12 @@ async function sealedRequest<T>(path: string, payload: Record<string, unknown>):
 export const api = {
   login: (username: string, password: string) =>
     sealedRequest<{ access_token: string; user: User }>('/auth/login', { username, password }),
+  register: (username: string, password: string, displayName = '') =>
+    sealedRequest<{ access_token: string; user: User }>('/auth/register', {
+      username,
+      password,
+      display_name: displayName,
+    }),
   handshake: () => request<Handshake>('/auth/handshake'),
   me: () => request<User>('/auth/me'),
   updateMe: (payload: Partial<Pick<User, 'display_name' | 'avatar_emoji' | 'currency'>>) =>
@@ -105,8 +111,8 @@ export const api = {
       new_password: newPassword,
     }),
 
-  categories: (includeArchived = false) =>
-    request<Category[]>(`/categories${qs({ include_archived: includeArchived })}`),
+  categories: (includeArchived = false, tree = false) =>
+    request<Category[]>(`/categories${qs({ include_archived: includeArchived, tree })}`),
   createCategory: (payload: Partial<Category>) =>
     request<Category>('/categories', { method: 'POST', body: JSON.stringify(payload) }),
   updateCategory: (id: number, payload: Partial<Category>) =>

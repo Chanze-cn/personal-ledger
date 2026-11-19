@@ -58,11 +58,19 @@ class AuthNonce(Base):
 
 
 class Category(Base):
+    """记账品类，最多两级：一级品类 `parent_id` 为空，二级品类挂在一级下。
+
+    只有「没有子品类」的末级品类可以被流水引用；父品类仅用于分组、统计聚合与预算。
+    """
+
     __tablename__ = "categories"
-    __table_args__ = (UniqueConstraint("user_id", "name", "kind", name="uq_category_user_name_kind"),)
+    __table_args__ = (Index("ix_category_user_parent", "user_id", "parent_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    parent_id: Mapped[int | None] = mapped_column(
+        ForeignKey("categories.id", ondelete="CASCADE"), nullable=True
+    )
     name: Mapped[str] = mapped_column(String(32))
     emoji: Mapped[str] = mapped_column(String(8), default="📦")
     kind: Mapped[str] = mapped_column(String(8), default="expense")  # expense / income
@@ -72,6 +80,10 @@ class Category(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=now)
 
     user: Mapped[User] = relationship(back_populates="categories")
+    children: Mapped[list["Category"]] = relationship(back_populates="parent")
+    parent: Mapped["Category | None"] = relationship(
+        back_populates="children", remote_side=[id]
+    )
 
 
 class Transaction(Base):

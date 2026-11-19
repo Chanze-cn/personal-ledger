@@ -67,9 +67,93 @@ def spend_cents(
         Transaction.occurred_on <= end,
     ]
     if category_id is not None:
-        conditions.append(Transaction.category_id == category_id)
+        # 绑一级品类时，已用金额统计其全部子品类流水
+        child_ids = db.scalars(
+            select(Category.id).where(Category.parent_id == category_id)
+        ).all()
+        conditions.append(Transaction.category_id.in_([category_id, *child_ids]))
     value = db.scalar(select(func.coalesce(func.sum(Transaction.amount_cents), 0)).where(*conditions))
     return int(value or 0)
+
+
+def _category_order(category: Category | None) -> tuple[int, int]:
+    if category is None:
+        return 9999, 0
+    return int(category.sort_order or 0), int(category.id)
+
+
+def group_child_budgets(
+    db: Session,
+    children: list[Budget],
+    categories: dict[int, Category],
+    today: dt.date,
+) -> list[dict]:
+    """把子预算按一级品类归组。
+
+    额度口径与「总预算 / 子预算」一致：同一父品类下
+    组额度 = max(整组预算, 该组子预算合计)；没有整组预算时即为子预算合计。
+    已用金额：有整组预算时用整组统计（本身已覆盖全部子品类），否则按子项累加。
+    """
+    buckets: dict[int, dict] = {}
+    for child in children:
+        category = categories.get(child.category_id or -1)
+        root = category
+        if category is not None and category.parent_id is not None:
+            root = categories.get(category.parent_id) or category
+        key = root.id if root is not None else -1
+        bucket = buckets.setdefault(key, {"root": root, "whole": None, "items": []})
+        if root is not None and category is not None and category.id == root.id:
+            bucket["whole"] = child
+        else:
+            bucket["items"].append(child)
+
+    groups: list[dict] = []
+    for bucket in buckets.values():
+        root: Category | None = bucket["root"]
+        whole: Budget | None = bucket["whole"]
+        items: list[Budget] = sorted(
+            bucket["items"],
+            key=lambda item: _category_order(categories.get(item.category_id or -1)),
+        )
+        whole_cents = int(whole.amount_cents or 0) if whole else 0
+        items_cents = sum(int(item.amount_cents or 0) for item in items)
+        group_cents = max(whole_cents, items_cents) if whole is not None else items_cents
+
+        if whole is not None:
+            start, end = budget_window(whole, today)
+            used_cents = spend_cents(db, whole.user_id, whole.kind, start, end, whole.category_id)
+        else:
+            used_cents = 0
+            for item in items:
+                start, end = budget_window(item, today)
+                used_cents += spend_cents(db, item.user_id, item.kind, start, end, item.category_id)
+
+        ordered = ([whole] if whole is not None else []) + items
+        groups.append(
+            {
+                "key": root.id if root is not None else -1,
+                "name": root.name if root is not None else "未分组",
+                "emoji": root.emoji if root is not None else "🗂️",
+                "color": root.color if root is not None else "#94A3B8",
+                "amount_cents": group_cents,
+                "amount": to_yuan(group_cents),
+                "whole_amount": to_yuan(whole_cents),
+                "items_total": to_yuan(items_cents),
+                "has_whole": whole is not None,
+                # 子预算合计高于整组预算时，组额度按合计执行
+                "overridden": whole is not None and items_cents > whole_cents,
+                "used": to_yuan(used_cents),
+                "children": [
+                    serialize_budget(
+                        db, child, categories.get(child.category_id or -1), None, categories, today
+                    )
+                    for child in ordered
+                ],
+            }
+        )
+
+    groups.sort(key=lambda group: _category_order(categories.get(group["key"])))
+    return groups
 
 
 def serialize_budget(
@@ -87,8 +171,9 @@ def serialize_budget(
 
     is_total = budget.category_id is None and budget.parent_id is None
     own_cents = int(budget.amount_cents or 0)
-    children_total = sum(int(child.amount_cents or 0) for child in children)
-    # 核心规则：品类子预算合计超过总预算时，以合计额度作为总预算执行口径
+    groups = group_child_budgets(db, children, categories, today) if is_total and children else []
+    # 组额度已按「max(整组预算, 子预算合计)」收敛，总预算再与组额度合计比较
+    children_total = sum(int(group["amount_cents"]) for group in groups)
     effective_cents = max(own_cents, children_total) if is_total else own_cents
     overridden = is_total and children_total > own_cents
 
@@ -112,6 +197,7 @@ def serialize_budget(
         if budget.category_id is None
         else (category.name if category else "已删除品类")
     )
+    parent_category = categories.get(category.parent_id) if category and category.parent_id else None
     data = {
         "id": budget.id,
         "parent_id": budget.parent_id,
@@ -120,6 +206,7 @@ def serialize_budget(
         "kind": budget.kind,
         "category_id": budget.category_id,
         "category_name": category.name if category else default_name,
+        "category_parent_name": parent_category.name if parent_category else None,
         "category_emoji": category.emoji if category else ("🧮" if budget.category_id is None else "❓"),
         "category_color": category.color if category else "#6366F1",
         "period_type": budget.period_type,
@@ -139,12 +226,11 @@ def serialize_budget(
         "daily_allowance": daily_allowance,
         "is_active": budget.is_active,
         "children": [],
+        "groups": [],
     }
     if is_total:
-        data["children"] = [
-            serialize_budget(db, child, categories.get(child.category_id or -1), None, categories, today)
-            for child in sorted(children, key=lambda item: int(item.id))
-        ]
+        data["groups"] = groups
+        data["children"] = [item for group in groups for item in group["children"]]
     return data
 
 

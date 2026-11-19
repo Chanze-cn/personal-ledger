@@ -26,10 +26,12 @@ router = APIRouter(prefix="/transactions", tags=["transactions"])
 
 def serialize_transaction(txn: Transaction) -> TransactionOut:
     category = txn.category
+    parent = category.parent if category else None
     return TransactionOut(
         id=txn.id,
         category_id=txn.category_id,
         category_name=category.name if category else "已删除品类",
+        category_parent_name=parent.name if parent else None,
         category_emoji=category.emoji if category else "❓",
         category_color=category.color if category else "#94A3B8",
         kind=txn.kind,
@@ -44,6 +46,25 @@ def _resolve_category(db: Session, user: User, category_id: int) -> Category:
     category = db.get(Category, category_id)
     if category is None or category.user_id != user.id:
         raise HTTPException(status_code=400, detail="品类不存在")
+    return category
+
+
+def _resolve_leaf_category(db: Session, user: User, category_id: int) -> Category:
+    """流水只能记到末级品类：父品类下还有子品类时拒绝。"""
+    category = _resolve_category(db, user, category_id)
+    if category.is_archived:
+        raise HTTPException(status_code=400, detail="该品类已归档，请选择其他品类")
+    has_child = db.scalar(
+        select(Category.id)
+        .where(
+            Category.user_id == user.id,
+            Category.parent_id == category.id,
+            Category.is_archived.is_(False),
+        )
+        .limit(1)
+    )
+    if has_child is not None:
+        raise HTTPException(status_code=400, detail="该品类下还有子品类，请选择具体子品类")
     return category
 
 
@@ -67,7 +88,14 @@ def list_transactions(
     if kind in {"expense", "income"}:
         conditions.append(Transaction.kind == kind)
     if category_id:
-        conditions.append(Transaction.category_id == category_id)
+        # 选一级品类时包含其全部子品类，符合「父级 = 整组」的直觉
+        child_ids = db.scalars(
+            select(Category.id).where(
+                Category.user_id == user.id,
+                Category.parent_id == category_id,
+            )
+        ).all()
+        conditions.append(Transaction.category_id.in_([category_id, *child_ids]))
     if q:
         conditions.append(Transaction.note.like(f"%{q.strip()}%"))
 
@@ -104,7 +132,7 @@ def create_transaction(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> MutationResult:
-    category = _resolve_category(db, user, payload.category_id)
+    category = _resolve_leaf_category(db, user, payload.category_id)
     with WRITE_LOCK:
         txn = Transaction(
             user_id=user.id,
@@ -140,7 +168,7 @@ def update_transaction(
     old_date = txn.occurred_on
     with WRITE_LOCK:
         if payload.category_id is not None:
-            category = _resolve_category(db, user, payload.category_id)
+            category = _resolve_leaf_category(db, user, payload.category_id)
             txn.category_id = category.id
             txn.kind = category.kind
         if payload.amount is not None:

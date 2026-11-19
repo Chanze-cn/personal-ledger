@@ -33,7 +33,10 @@ export default function Transactions() {
   const [deleting, setDeleting] = useState(false);
 
   const q = useDebounced(keyword, 350);
-  const categoriesQuery = useQuery(() => api.categories(), []);
+  const categoriesQuery = useQuery(() => api.categories(false, true), []);
+  const categoryGroups = (categoriesQuery.data ?? []).filter(
+    (group) => !kind || group.kind === kind,
+  );
   const { data, loading, reload } = useQuery(
     () =>
       api.transactions({
@@ -135,11 +138,22 @@ export default function Transactions() {
             className="field w-auto py-2 text-[13px]"
           >
             <option value="">全部品类</option>
-            {(categoriesQuery.data ?? []).map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.emoji} {category.name}
-              </option>
-            ))}
+            {categoryGroups.map((group) =>
+              (group.children ?? []).length > 0 ? (
+                <optgroup key={group.id} label={`${group.emoji} ${group.name}`}>
+                  <option value={group.id}>{group.emoji} {group.name}（含子品类）</option>
+                  {(group.children ?? []).map((child) => (
+                    <option key={child.id} value={child.id}>
+                      {child.emoji} {child.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : (
+                <option key={group.id} value={group.id}>
+                  {group.emoji} {group.name}
+                </option>
+              ),
+            )}
           </select>
           <div className="relative">
             <Search
@@ -226,7 +240,14 @@ export default function Transactions() {
                           >
                             {txn.category_emoji}
                           </span>
-                          <span className="text-[13px] text-slate-700">{txn.category_name}</span>
+                          <span className="flex min-w-0 items-center gap-1 text-[13px] text-slate-700">
+                            {txn.category_parent_name && (
+                              <span className="shrink-0 text-[12px] text-slate-400">
+                                {txn.category_parent_name} ›
+                              </span>
+                            )}
+                            <span className="truncate">{txn.category_name}</span>
+                          </span>
                         </span>
                       </td>
                       <td className="max-w-[240px] truncate px-3 py-3 text-[13px] text-slate-500">

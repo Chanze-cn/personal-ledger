@@ -45,6 +45,8 @@ class CategoryIn(BaseModel):
     kind: str = Field(default="expense", pattern="^(expense|income)$")
     color: str = Field(default="#94A3B8", max_length=16)
     sort_order: int = 0
+    """为空表示一级品类；填写时必须是同账号下的一级品类 id。"""
+    parent_id: int | None = None
 
 
 class CategoryUpdate(BaseModel):
@@ -59,6 +61,7 @@ class CategoryOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    parent_id: int | None
     name: str
     emoji: str
     kind: str
@@ -90,6 +93,7 @@ class TransactionOut(BaseModel):
     id: int
     category_id: int
     category_name: str
+    category_parent_name: str | None = None
     category_emoji: str
     category_color: str
     kind: str

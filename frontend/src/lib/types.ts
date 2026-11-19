@@ -9,6 +9,7 @@ export interface User {
 
 export interface Category {
   id: number;
+  parent_id: number | null;
   name: string;
   emoji: string;
   kind: 'expense' | 'income';
@@ -16,12 +17,17 @@ export interface Category {
   sort_order: number;
   is_archived: boolean;
   usage: number;
+  child_count: number;
+  /** 没有子品类时才是可记账的末级品类 */
+  is_leaf: boolean;
+  children?: Category[];
 }
 
 export interface Transaction {
   id: number;
   category_id: number;
   category_name: string;
+  category_parent_name: string | null;
   category_emoji: string;
   category_color: string;
   kind: 'expense' | 'income';
@@ -50,6 +56,7 @@ export interface BudgetNode {
   kind: 'expense' | 'income';
   category_id: number | null;
   category_name: string;
+  category_parent_name: string | null;
   category_emoji: string;
   category_color: string;
   period_type: PeriodType;
@@ -68,6 +75,22 @@ export interface BudgetNode {
   days_left: number;
   daily_allowance: number;
   is_active: boolean;
+  children: BudgetNode[];
+  /** 总预算专用：子预算按一级品类归组，额度 = max(整组预算, 子预算合计) */
+  groups: BudgetGroup[];
+}
+
+export interface BudgetGroup {
+  key: number;
+  name: string;
+  emoji: string;
+  color: string;
+  amount: number;
+  whole_amount: number;
+  items_total: number;
+  has_whole: boolean;
+  overridden: boolean;
+  used: number;
   children: BudgetNode[];
 }
 
@@ -125,7 +148,7 @@ export interface TrendPoint {
   income: number;
 }
 
-export interface CategorySlice {
+export interface CategorySliceChild {
   id: number;
   name: string;
   emoji: string;
@@ -133,6 +156,20 @@ export interface CategorySlice {
   amount: number;
   count: number;
   share: number;
+}
+
+export interface CategorySlice {
+  id: number;
+  parent_id?: number | null;
+  name: string;
+  emoji: string;
+  color: string;
+  amount: number;
+  count: number;
+  share: number;
+  /** 一级品类聚合，children 为子品类明细 */
+  is_group?: boolean;
+  children?: CategorySliceChild[];
   previous_amount?: number;
   delta?: number | null;
 }

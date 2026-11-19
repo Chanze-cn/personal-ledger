@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Area,
-  AreaChart,
   CartesianGrid,
   Cell,
+  ComposedChart,
   Line,
   Pie,
   PieChart,
@@ -99,6 +99,7 @@ export default function Dashboard() {
   const delta = month.expense_delta;
   const budgetGroups = data.budgets;
   const budgetItems = [...budgetGroups.totals, ...budgetGroups.standalone];
+  const compareMode = chartMode === 'both';
 
   return (
     <div>
@@ -199,9 +200,13 @@ export default function Dashboard() {
         <Card className="p-5 lg:col-span-2">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="text-sm font-medium text-ink">支出趋势</p>
+              <p className="text-sm font-medium text-ink">
+                {compareMode ? '收支趋势' : '支出趋势'}
+              </p>
               <p className="mt-0.5 text-xs text-slate-400">
-                {money(month.expense)} · 覆盖 {data.trend.length} 天
+                {compareMode
+                  ? `支出 ${money(month.expense)} · 收入 ${money(month.income)}`
+                  : `${money(month.expense)} · 覆盖 ${data.trend.length} 天`}
               </p>
             </div>
             <Segmented
@@ -222,7 +227,10 @@ export default function Dashboard() {
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={data.trend} margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
+                <ComposedChart
+                  data={data.trend}
+                  margin={{ top: 8, right: compareMode ? 0 : 4, left: -18, bottom: 0 }}
+                >
                   <defs>
                     <linearGradient id="expenseFill" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#6366f1" stopOpacity={0.26} />
@@ -238,17 +246,30 @@ export default function Dashboard() {
                     interval={Math.max(0, Math.floor(data.trend.length / 6))}
                   />
                   <YAxis
+                    yAxisId="expense"
                     tickLine={false}
                     axisLine={false}
                     width={56}
                     tick={{ fontSize: 10.5, fill: '#94a3b8' }}
                     tickFormatter={(value: number) => moneyShort(value)}
                   />
+                  {compareMode && (
+                    <YAxis
+                      yAxisId="income"
+                      orientation="right"
+                      tickLine={false}
+                      axisLine={false}
+                      width={52}
+                      tick={{ fontSize: 10.5, fill: '#10b981' }}
+                      tickFormatter={(value: number) => moneyShort(value)}
+                    />
+                  )}
                   <Tooltip
                     content={<ChartTooltip />}
                     cursor={{ stroke: '#c7d2fe', strokeDasharray: '4 4' }}
                   />
                   <Area
+                    yAxisId="expense"
                     type="monotone"
                     dataKey="expense"
                     name="支出"
@@ -257,20 +278,35 @@ export default function Dashboard() {
                     fill="url(#expenseFill)"
                     activeDot={{ r: 3.5, strokeWidth: 2, stroke: '#fff' }}
                   />
-                  {chartMode === 'both' && (
+                  {compareMode && (
                     <Line
+                      yAxisId="income"
                       type="monotone"
                       dataKey="income"
                       name="收入"
                       stroke="#10b981"
-                      strokeWidth={1.6}
+                      strokeWidth={1.8}
+                      strokeDasharray="4 3"
                       dot={false}
+                      activeDot={{ r: 3, strokeWidth: 2, stroke: '#fff' }}
                     />
                   )}
-                </AreaChart>
+                </ComposedChart>
               </ResponsiveContainer>
             )}
           </div>
+          {compareMode && (
+            <div className="mt-2 flex items-center gap-4 text-[11px] text-slate-400">
+              <span className="flex items-center gap-1.5">
+                <span className="h-1.5 w-4 rounded-full bg-[#6366f1]" />
+                支出 · 左轴
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-1.5 w-4 rounded-full bg-[#10b981]" />
+                收入 · 右轴
+              </span>
+            </div>
+          )}
         </Card>
 
         <Card className="p-5">
@@ -445,7 +481,10 @@ export default function Dashboard() {
                       {txn.note || txn.category_name}
                     </p>
                     <p className="text-[10.5px] text-slate-400">
-                      {txn.category_name} · {dayLabel(txn.occurred_on, false)}
+                      {txn.category_parent_name
+                        ? `${txn.category_parent_name} › ${txn.category_name}`
+                        : txn.category_name}{' '}
+                      · {dayLabel(txn.occurred_on, false)}
                     </p>
                   </div>
                   <span

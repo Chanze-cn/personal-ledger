@@ -14,6 +14,7 @@ import {
 import {
   ArrowDownRight,
   ArrowUpRight,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Layers,
@@ -72,6 +73,16 @@ export default function Reports() {
   const [granularity, setGranularity] = useState<Granularity>('month');
   const [rebuilding, setRebuilding] = useState(false);
   const [tick, setTick] = useState(0);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+
+  const toggleCategory = (id: number) => {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const { data, loading } = useQuery<Report>(
     () => api.report(period, anchor),
@@ -367,7 +378,7 @@ export default function Reports() {
             <div>
               <p className="text-sm font-medium text-ink">支出构成</p>
               <p className="mt-0.5 text-xs text-slate-400">
-                {data.categories.length} 个品类 · 含环比变化
+                {data.categories.length} 个一级品类 · 可展开看子品类 · 含环比变化
               </p>
             </div>
           </div>
@@ -375,42 +386,86 @@ export default function Reports() {
             <EmptyState emoji="🥧" title="本期暂无支出" />
           ) : (
             <div className="mt-4 space-y-3">
-              {data.categories.slice(0, 8).map((item) => (
-                <div key={item.id}>
-                  <div className="mb-1 flex items-center justify-between gap-2">
-                    <span className="flex min-w-0 items-center gap-2">
-                      <span className="flex h-6 w-6 items-center justify-center rounded-md bg-slate-50 text-[12px]">
-                        {item.emoji}
-                      </span>
-                      <span className="truncate text-[12.5px] text-slate-600">{item.name}</span>
-                      <span className="text-[10.5px] text-slate-400">{item.share}%</span>
-                    </span>
-                    <span className="flex shrink-0 items-center gap-2">
-                      {typeof item.delta === 'number' && (
-                        <span
-                          className={`text-[10.5px] ${
-                            item.delta > 0 ? 'text-rose-500' : 'text-emerald-600'
-                          }`}
-                        >
-                          {signedPercent(item.delta)}
+              {data.categories.slice(0, 8).map((item) => {
+                const children = item.children ?? [];
+                const open = expanded.has(item.id);
+                return (
+                  <div key={item.id}>
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() => children.length > 0 && toggleCategory(item.id)}
+                        className={`flex min-w-0 items-center gap-2 text-left ${
+                          children.length > 0 ? 'cursor-pointer' : 'cursor-default'
+                        }`}
+                      >
+                        {children.length > 0 ? (
+                          <ChevronDown
+                            size={12}
+                            className={`shrink-0 text-slate-400 transition ${
+                              open ? '' : '-rotate-90'
+                            }`}
+                          />
+                        ) : (
+                          <span className="w-3 shrink-0" />
+                        )}
+                        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-slate-50 text-[12px]">
+                          {item.emoji}
                         </span>
-                      )}
-                      <span className="tnum text-[12px] font-medium text-ink">
-                        {money(item.amount)}
+                        <span className="truncate text-[12.5px] text-slate-600">{item.name}</span>
+                        <span className="text-[10.5px] text-slate-400">{item.share}%</span>
+                        {children.length > 0 && (
+                          <span className="chip bg-slate-100 text-[9.5px] text-slate-500">
+                            {children.length} 子项
+                          </span>
+                        )}
+                      </button>
+                      <span className="flex shrink-0 items-center gap-2">
+                        {typeof item.delta === 'number' && (
+                          <span
+                            className={`text-[10.5px] ${
+                              item.delta > 0 ? 'text-rose-500' : 'text-emerald-600'
+                            }`}
+                          >
+                            {signedPercent(item.delta)}
+                          </span>
+                        )}
+                        <span className="tnum text-[12px] font-medium text-ink">
+                          {money(item.amount)}
+                        </span>
                       </span>
-                    </span>
+                    </div>
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className="h-full rounded-full transition-all duration-700"
+                        style={{
+                          width: `${Math.max(2, item.share)}%`,
+                          background: item.color,
+                        }}
+                      />
+                    </div>
+                    {open && children.length > 0 && (
+                      <div className="mt-1.5 space-y-1 border-l border-slate-100 pl-5">
+                        {children.map((child) => (
+                          <div
+                            key={child.id}
+                            className="flex items-center justify-between gap-2 text-[11.5px] text-slate-500"
+                          >
+                            <span className="flex min-w-0 items-center gap-1.5">
+                              <span className="text-[11px]">{child.emoji}</span>
+                              <span className="truncate">{child.name}</span>
+                            </span>
+                            <span className="tnum shrink-0">
+                              {money(child.amount)}
+                              <span className="ml-1.5 text-slate-400">{child.share}%</span>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                    <div
-                      className="h-full rounded-full transition-all duration-700"
-                      style={{
-                        width: `${Math.max(2, item.share)}%`,
-                        background: item.color,
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </Card>

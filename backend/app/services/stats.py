@@ -56,6 +56,7 @@ def _totals(db: Session, user_id: int, start: dt.date, end: dt.date) -> dict:
 def category_breakdown(
     db: Session, user_id: int, start: dt.date, end: dt.date, kind: str = "expense"
 ) -> list[dict]:
+    """按一级品类聚合，子品类明细放在 children 中，避免构成图被末级品类碎片化。"""
     rows = db.execute(
         select(
             RollupDaily.category_id,
@@ -75,18 +76,64 @@ def category_breakdown(
         c.id: c for c in db.scalars(select(Category).where(Category.user_id == user_id)).all()
     }
     total = sum(int(r[1] or 0) for r in rows) or 1
-    result = []
+
+    buckets: dict[int | str, dict] = {}
     for category_id, amount, count in rows:
         category = categories.get(category_id)
+        root = category
+        if category is not None and category.parent_id is not None:
+            root = categories.get(category.parent_id)
+        key: int | str = root.id if root else f"deleted-{category_id}"
+        bucket = buckets.setdefault(
+            key, {"root": root, "cents": 0, "count": 0, "children": {}}
+        )
+        cents = int(amount or 0)
+        bucket["cents"] += cents
+        bucket["count"] += int(count or 0)
+        if root is not None and category is not None and category.id != root.id:
+            child = bucket["children"].setdefault(
+                category.id,
+                {
+                    "id": category.id,
+                    "name": category.name,
+                    "emoji": category.emoji,
+                    "color": category.color,
+                    "cents": 0,
+                    "count": 0,
+                },
+            )
+            child["cents"] += cents
+            child["count"] += int(count or 0)
+
+    result = []
+    for bucket in buckets.values():
+        root = bucket["root"]
+        children = sorted(
+            bucket["children"].values(), key=lambda item: item["cents"], reverse=True
+        )
         result.append(
             {
-                "id": category_id,
-                "name": category.name if category else "已删除",
-                "emoji": category.emoji if category else "❓",
-                "color": category.color if category else "#94A3B8",
-                "amount": to_yuan(amount),
-                "count": int(count or 0),
-                "share": round(int(amount or 0) / total * 100, 1),
+                "id": root.id if root else 0,
+                "parent_id": root.parent_id if root else None,
+                "name": root.name if root else "已删除",
+                "emoji": root.emoji if root else "❓",
+                "color": root.color if root else "#94A3B8",
+                "amount": to_yuan(bucket["cents"]),
+                "count": bucket["count"],
+                "share": round(bucket["cents"] / total * 100, 1),
+                "is_group": bool(children),
+                "children": [
+                    {
+                        "id": child["id"],
+                        "name": child["name"],
+                        "emoji": child["emoji"],
+                        "color": child["color"],
+                        "amount": to_yuan(child["cents"]),
+                        "count": child["count"],
+                        "share": round(child["cents"] / total * 100, 1),
+                    }
+                    for child in children
+                ],
             }
         )
     result.sort(key=lambda item: item["amount"], reverse=True)

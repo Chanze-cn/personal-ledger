@@ -112,7 +112,10 @@ export default function Bookkeep() {
                         {txn.note || txn.category_name}
                       </p>
                       <p className="text-[10.5px] text-slate-400">
-                        {txn.category_name} · {dayLabel(txn.occurred_on, false)}
+                        {txn.category_parent_name
+                          ? `${txn.category_parent_name} › ${txn.category_name}`
+                          : txn.category_name}{' '}
+                        · {dayLabel(txn.occurred_on, false)}
                       </p>
                     </div>
                     <span
