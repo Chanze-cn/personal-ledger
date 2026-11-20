@@ -24,6 +24,7 @@ from ..schemas import (
 )
 from ..services.jobs import patch_rollup_job
 from ..services.stats import to_yuan
+from ..clock import today as local_today
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
@@ -174,7 +175,7 @@ def export_transactions(
                 txn.note or "",
             ]
         )
-    filename = f"ledger-transactions-{dt.date.today().isoformat()}.csv"
+    filename = f"ledger-transactions-{local_today().isoformat()}.csv"
     return Response(
         content="\ufeff" + output.getvalue(),
         media_type="text/csv; charset=utf-8",

@@ -16,6 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..models import Budget, Category, Transaction
+from ..clock import today as local_today
 from .rollup import period_end, period_start
 from .stats import to_yuan
 
@@ -23,7 +24,7 @@ PERIOD_LABELS = {"day": "每日", "week": "每周", "month": "每月", "year": "
 
 
 def budget_window(budget: Budget, today: dt.date | None = None) -> tuple[dt.date, dt.date]:
-    today = today or dt.date.today()
+    today = today or local_today()
     period_type = budget.period_type
     if period_type == "day":
         return today, today
@@ -164,7 +165,7 @@ def serialize_budget(
     categories: dict[int, Category] | None = None,
     today: dt.date | None = None,
 ) -> dict:
-    today = today or dt.date.today()
+    today = today or local_today()
     categories = categories or {}
     children = children or []
     start, end = budget_window(budget, today)
@@ -247,7 +248,7 @@ def serialize_budget(
 def list_budget_groups(
     db: Session, user_id: int, kind: str | None = None, today: dt.date | None = None
 ) -> dict:
-    today = today or dt.date.today()
+    today = today or local_today()
     statement = select(Budget).where(Budget.user_id == user_id, Budget.is_active.is_(True))
     if kind:
         statement = statement.where(Budget.kind == kind)

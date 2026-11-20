@@ -71,11 +71,22 @@ def ensure_schema() -> None:
         # External databases use a real migration tool in deployment; the
         # SQLite table-rebuild compatibility path must never run there.
         return
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE IF NOT EXISTS schema_migrations "
+            "(version INTEGER PRIMARY KEY, applied_at DATETIME NOT NULL)"
+        )
+
     inspector = inspect(engine)
     if not inspector.has_table("categories"):
         return
     columns = {column["name"] for column in inspector.get_columns("categories")}
     if "parent_id" in columns:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "INSERT OR IGNORE INTO schema_migrations(version, applied_at) "
+                "VALUES (1, CURRENT_TIMESTAMP)"
+            )
         return
 
     raw = engine.raw_connection()
@@ -97,6 +108,11 @@ def ensure_schema() -> None:
         cursor.execute("CREATE INDEX ix_category_user_kind ON categories (user_id, kind)")
         raw.commit()
         cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute(
+            "INSERT OR IGNORE INTO schema_migrations(version, applied_at) "
+            "VALUES (1, CURRENT_TIMESTAMP)"
+        )
+        raw.commit()
     except Exception:
         raw.rollback()
         raise

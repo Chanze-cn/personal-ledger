@@ -16,6 +16,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from ..models import RollupDaily, RollupPeriod, Transaction
+from ..clock import today as local_today
 
 GRANULARITIES = ("week", "month", "year")
 
@@ -82,7 +83,7 @@ def recalc_from(
     on_progress: Callable[[float, str], None] | None = None,
 ) -> dict:
     """从 from_date 起，重算日 / 周 / 月 / 年切片。"""
-    today = today or dt.date.today()
+    today = today or local_today()
     notice = on_progress or (lambda _pct, _msg: None)
 
     rows = db.execute(
@@ -186,7 +187,7 @@ def recalc_all(db: Session, user_id: int, on_progress=None) -> dict:
     earliest = db.scalar(
         select(func.min(Transaction.occurred_on)).where(Transaction.user_id == user_id)
     )
-    from_date = earliest or (dt.date.today() - dt.timedelta(days=365))
+    from_date = earliest or (local_today() - dt.timedelta(days=365))
     return recalc_from(db, user_id, from_date, on_progress=on_progress)
 
 

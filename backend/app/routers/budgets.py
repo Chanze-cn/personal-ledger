@@ -19,6 +19,7 @@ from ..deps import get_current_user
 from ..models import Budget, Category, User
 from ..schemas import BudgetIn, BudgetUpdate
 from ..services.budgets import list_budget_groups, serialize_budget
+from ..clock import today as local_today
 
 router = APIRouter(prefix="/budgets", tags=["budgets"])
 
@@ -88,7 +89,7 @@ def create_budget(
     else:
         period_type = payload.period_type
         period_days = payload.period_days if payload.period_type == "custom" else None
-        anchor_date = payload.anchor_date or dt.date.today()
+        anchor_date = payload.anchor_date or local_today()
         kind = category.kind if category is not None else payload.kind
 
     if period_type == "custom" and not period_days:

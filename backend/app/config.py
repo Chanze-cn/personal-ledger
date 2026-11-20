@@ -17,6 +17,7 @@ ENVIRONMENT = os.getenv("LEDGER_ENV", "development").strip().lower()
 if ENVIRONMENT in {"production", "prod"} and SECRET_KEY == "ledger-local-dev-secret-key-please-change":
     raise RuntimeError("LEDGER_SECRET_KEY must be set when LEDGER_ENV=production")
 TOKEN_TTL_HOURS = int(os.getenv("LEDGER_TOKEN_TTL_HOURS", "72"))
+TIMEZONE_NAME = os.getenv("LEDGER_TIMEZONE", "local").strip() or "local"
 
 # 传输加密：RSA 私钥文件（首次启动自动生成，权限 600）
 AUTH_KEY_PATH = Path(os.getenv("LEDGER_AUTH_KEY_PATH", str(DATA_DIR / "auth_key.pem")))

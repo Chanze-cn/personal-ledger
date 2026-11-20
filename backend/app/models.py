@@ -22,9 +22,11 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from .clock import now as local_now
+
 
 def now() -> dt.datetime:
-    return dt.datetime.now()
+    return local_now()
 
 
 class Base(DeclarativeBase):

@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 
 from ..database import SessionLocal, WRITE_LOCK
 from ..models import Category, RecurringOccurrence, RecurringTransaction, Transaction, User
+from ..clock import today as local_today
 from .jobs import patch_rollup_job
 from .stats import to_yuan
 
@@ -45,7 +46,7 @@ def serialize_template(db, item: RecurringTransaction) -> dict:
 
 
 def generate_due(db, user_id: int, as_of: dt.date | None = None) -> tuple[int, dt.date | None]:
-    as_of = as_of or dt.date.today()
+    as_of = as_of or local_today()
     created = 0
     earliest: dt.date | None = None
     with WRITE_LOCK:

@@ -23,6 +23,7 @@ from ..models import (
     User,
 )
 from ..services.jobs import rebuild_job
+from ..clock import now as local_now, today as local_today
 
 router = APIRouter(prefix="/system", tags=["system"])
 
@@ -93,8 +94,8 @@ def system_info(
 
     return {
         "app": APP_NAME,
-        "server_time": dt.datetime.now().isoformat(timespec="seconds"),
-        "today": dt.date.today().isoformat(),
+        "server_time": local_now().isoformat(timespec="seconds"),
+        "today": local_today().isoformat(),
         "txn_count": int(txn_count),
         "daily_rows": int(daily_rows),
         "period_rows": int(period_rows),
@@ -136,7 +137,7 @@ def export_account_data(
     ).all()
     bundle = {
         "format_version": 1,
-        "exported_at": dt.datetime.now().isoformat(timespec="seconds"),
+        "exported_at": local_now().isoformat(timespec="seconds"),
         "user": {
             "username": user.username,
             "display_name": user.display_name,
@@ -164,7 +165,7 @@ def export_account_data(
             for item in budgets
         ],
     }
-    filename = f"ledger-backup-{dt.date.today().isoformat()}.json"
+    filename = f"ledger-backup-{local_today().isoformat()}.json"
     return Response(
         content=json.dumps(bundle, ensure_ascii=False, indent=2),
         media_type="application/json; charset=utf-8",
@@ -182,7 +183,7 @@ def generate_demo_data(
     by_name: dict[tuple[str, str], Category] = {(c.name, c.kind): c for c in categories}
 
     rng = random.Random(20261116)
-    today = dt.date.today()
+    today = local_today()
     created = 0
     budgets_created = 0
     with WRITE_LOCK:

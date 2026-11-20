@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from ..database import SessionLocal, WRITE_LOCK
 from ..models import JobRun, User, now
+from ..clock import today as local_today
 from .rollup import recalc_all, recalc_from, recalc_range_summary
 
 EXECUTOR = ThreadPoolExecutor(max_workers=3, thread_name_prefix="ledger-job")
@@ -236,12 +237,12 @@ def _active_users() -> list[User]:
 
 def schedule_startup_calibration() -> list[int]:
     """启动校准：为每个启用用户补一次昨天的日切片。"""
-    target = dt.date.today() - dt.timedelta(days=1)
+    target = local_today() - dt.timedelta(days=1)
     return [daily_rollup_job(user.id, target, trigger="system") for user in _active_users()]
 
 
 def schedule_daily_rollup() -> list[int]:
-    target = dt.date.today()
+    target = local_today()
     return [daily_rollup_job(user.id, target, trigger="schedule") for user in _active_users()]
 
 
@@ -249,7 +250,7 @@ def schedule_catchup() -> list[int]:
     """补偿巡检：当日有流水但缺日切片的用户，自动补一个任务。"""
     from ..models import RollupDaily, Transaction
 
-    today = dt.date.today()
+    today = local_today()
     job_ids: list[int] = []
     for user in _active_users():
         with SessionLocal() as db:

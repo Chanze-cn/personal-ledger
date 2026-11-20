@@ -10,6 +10,7 @@ from ..models import RecurringTransaction, User
 from ..routers.transactions import _resolve_leaf_category
 from ..schemas import RecurringIn, RecurringOut, RecurringUpdate
 from ..services.recurring import generate_due, serialize_template
+from ..clock import today as local_today
 
 router = APIRouter(prefix="/recurring", tags=["recurring"])
 
@@ -59,5 +60,5 @@ def delete_recurring(template_id: int, user: User = Depends(get_current_user), d
 
 @router.post("/generate")
 def generate_recurring(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    created, earliest = generate_due(db, user.id, dt.date.today())
+    created, earliest = generate_due(db, user.id, local_today())
     return {"created": created, "from_date": earliest, "message": f"已生成 {created} 笔周期流水"}

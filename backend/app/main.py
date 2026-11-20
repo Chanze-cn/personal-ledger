@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import APP_NAME, APP_TAGLINE, AUTH_KEY_PATH, FRONTEND_DIST
+from .clock import now as local_now
 from .crypto_transport import TransportCrypto
 from .database import engine, ensure_schema
 from .models import Base
@@ -71,7 +72,7 @@ api.include_router(system.router)
 
 @api.get("/health", tags=["system"], summary="健康检查")
 def health() -> dict:
-    return {"status": "ok", "time": dt.datetime.now().isoformat(timespec="seconds")}
+    return {"status": "ok", "time": local_now().isoformat(timespec="seconds")}
 
 
 @api.get("/meta", tags=["system"], summary="公开产品信息")

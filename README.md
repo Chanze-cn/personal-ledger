@@ -115,6 +115,7 @@ backend/tests/             # 后端回归测试（pytest）
 | `LEDGER_DATABASE_URL` | `sqlite:///backend/data/ledger.db` | 数据库连接 |
 | `LEDGER_SECRET_KEY` | 本地默认值 | JWT 签名密钥（部署请务必覆盖） |
 | `LEDGER_ENV` | `development` | 生产环境设为 `production` 后禁止使用默认 JWT 密钥 |
+| `LEDGER_TIMEZONE` | `local` | 可选 IANA 时区，例如 `Asia/Shanghai`；默认保持系统本地时间 |
 | `LEDGER_AUTH_KEY_PATH` | `backend/data/auth_key.pem` | 传输加密 RSA 私钥路径 |
 | `LEDGER_NONCE_TTL_SECONDS` | `120` | 握手 nonce 有效期 |
 | `LEDGER_REQUEST_TS_WINDOW_SECONDS` | `300` | 加密请求时间窗 |
@@ -132,6 +133,8 @@ cd backend
 ../.venv/bin/pip install -r requirements-dev.txt
 ../.venv/bin/pytest -q
 ```
+
+启动时会保留 `schema_migrations` 版本记录；旧版 SQLite 数据库继续自动升级，迁移只新增结构，不删除既有业务字段。
 
 ## 说明
 

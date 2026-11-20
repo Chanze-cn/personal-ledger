@@ -7,11 +7,12 @@ import datetime as dt
 import traceback
 
 from ..config import CATCHUP_INTERVAL_MINUTES, DAILY_JOB_HOUR, DAILY_JOB_MINUTE
+from ..clock import now as local_now
 from .jobs import schedule_catchup, schedule_daily_rollup
 
 
 def seconds_until(hour: int, minute: int, now: dt.datetime | None = None) -> float:
-    now = now or dt.datetime.now()
+    now = now or local_now()
     target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
     if target <= now:
         target += dt.timedelta(days=1)
