@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import random
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
@@ -115,6 +116,60 @@ def system_info(
             else None
         ),
     }
+
+
+@router.get("/export", summary="导出当前账号 JSON 备份")
+def export_account_data(
+    user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> Response:
+    """导出可长期保存的业务数据快照，不修改任何现有数据。"""
+    categories = db.scalars(
+        select(Category).where(Category.user_id == user.id).order_by(Category.id)
+    ).all()
+    transactions = db.scalars(
+        select(Transaction)
+        .where(Transaction.user_id == user.id)
+        .order_by(Transaction.occurred_on, Transaction.id)
+    ).all()
+    budgets = db.scalars(
+        select(Budget).where(Budget.user_id == user.id).order_by(Budget.id)
+    ).all()
+    bundle = {
+        "format_version": 1,
+        "exported_at": dt.datetime.now().isoformat(timespec="seconds"),
+        "user": {
+            "username": user.username,
+            "display_name": user.display_name,
+            "avatar_emoji": user.avatar_emoji,
+            "currency": user.currency,
+        },
+        "categories": [
+            {"id": item.id, "parent_id": item.parent_id, "name": item.name, "emoji": item.emoji,
+             "kind": item.kind, "color": item.color, "sort_order": item.sort_order,
+             "is_archived": item.is_archived}
+            for item in categories
+        ],
+        "transactions": [
+            {"id": item.id, "category_id": item.category_id, "kind": item.kind,
+             "amount_cents": item.amount_cents, "occurred_on": item.occurred_on.isoformat(),
+             "note": item.note or ""}
+            for item in transactions
+        ],
+        "budgets": [
+            {"id": item.id, "parent_id": item.parent_id, "category_id": item.category_id,
+             "name": item.name, "kind": item.kind, "period_type": item.period_type,
+             "period_days": item.period_days,
+             "anchor_date": item.anchor_date.isoformat() if item.anchor_date else None,
+             "amount_cents": item.amount_cents, "is_active": item.is_active}
+            for item in budgets
+        ],
+    }
+    filename = f"ledger-backup-{dt.date.today().isoformat()}.json"
+    return Response(
+        content=json.dumps(bundle, ensure_ascii=False, indent=2),
+        media_type="application/json; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/demo-data", summary="生成示例数据（40 天，含两级品类与示例预算）")

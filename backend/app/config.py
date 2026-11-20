@@ -13,6 +13,9 @@ DB_PATH = DATA_DIR / "ledger.db"
 DATABASE_URL = os.getenv("LEDGER_DATABASE_URL", f"sqlite:///{DB_PATH}")
 
 SECRET_KEY = os.getenv("LEDGER_SECRET_KEY", "ledger-local-dev-secret-key-please-change")
+ENVIRONMENT = os.getenv("LEDGER_ENV", "development").strip().lower()
+if ENVIRONMENT in {"production", "prod"} and SECRET_KEY == "ledger-local-dev-secret-key-please-change":
+    raise RuntimeError("LEDGER_SECRET_KEY must be set when LEDGER_ENV=production")
 TOKEN_TTL_HOURS = int(os.getenv("LEDGER_TOKEN_TTL_HOURS", "72"))
 
 # 传输加密：RSA 私钥文件（首次启动自动生成，权限 600）

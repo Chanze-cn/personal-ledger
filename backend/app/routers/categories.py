@@ -8,12 +8,12 @@ from __future__ import annotations
 from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from ..database import WRITE_LOCK, get_db
 from ..deps import get_current_user
-from ..models import Category, Transaction, User
+from ..models import Category, RollupDaily, RollupPeriod, Transaction, User
 from ..schemas import CategoryIn, CategoryOut, CategoryUpdate
 
 router = APIRouter(prefix="/categories", tags=["categories"])
@@ -218,6 +218,20 @@ def delete_category(
             db.add(category)
             db.commit()
             return {"archived": True, "message": "该品类已有流水，已归档以保留历史记录"}
+        # Rollups intentionally do not have a foreign key to categories so
+        # historical slices can survive category archival. When there is no
+        # source transaction left, however, a hard delete must remove any
+        # stale slices as well.
+        db.execute(
+            delete(RollupDaily).where(
+                RollupDaily.user_id == user.id, RollupDaily.category_id == category_id
+            )
+        )
+        db.execute(
+            delete(RollupPeriod).where(
+                RollupPeriod.user_id == user.id, RollupPeriod.category_id == category_id
+            )
+        )
         db.delete(category)
         db.commit()
     return {"archived": False, "message": "品类已删除"}

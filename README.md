@@ -32,6 +32,10 @@ cd backend && ../.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --por
 cd frontend && npm install && npm run dev
 ```
 
+本地默认继续使用 SQLite；部署到 PostgreSQL 时可额外安装
+`backend/requirements-postgres.txt`，并设置 `LEDGER_DATABASE_URL`。
+现有 SQLite 配置和数据格式保持不变。
+
 > WebCrypto 只在安全上下文可用：请用 `http://localhost` / `http://127.0.0.1` 或 HTTPS 访问，
 > 直接使用局域网明文 IP 时浏览器会禁用加密能力并拦截登录。
 
@@ -56,6 +60,7 @@ frontend/
   src/pages/              # Landing / Docs / Login / Dashboard / Bookkeep / Transactions
                           # Reports / Budgets / Categories / Jobs / Settings
   src/components/         # AppShell · QuickEntry(⌘K) · EntryForm · CursorGlow · ChartBits · ui
+backend/tests/             # 后端回归测试（pytest）
 ```
 
 ## 关键设计
@@ -95,6 +100,9 @@ frontend/
 品类、流水、预算、切片与任务记录均按账号隔离，任务历史按账号各保留最近 300 条；
 「清空数据」只删除当前账号的流水 / 切片 / 预算并保留品类，不会影响其他账号。
 
+**流水导入导出。** 流水页支持 CSV 导出与批量导入；导入格式至少包含
+`occurred_on`、`amount`、`category_id`、`note` 列，单次最多 5000 笔，导入后只提交一次切片重算任务。
+
 ## 环境变量
 
 | 变量 | 默认值 | 说明 |
@@ -103,6 +111,7 @@ frontend/
 | `LEDGER_DATA_DIR` | `backend/data` | 数据目录 |
 | `LEDGER_DATABASE_URL` | `sqlite:///backend/data/ledger.db` | 数据库连接 |
 | `LEDGER_SECRET_KEY` | 本地默认值 | JWT 签名密钥（部署请务必覆盖） |
+| `LEDGER_ENV` | `development` | 生产环境设为 `production` 后禁止使用默认 JWT 密钥 |
 | `LEDGER_AUTH_KEY_PATH` | `backend/data/auth_key.pem` | 传输加密 RSA 私钥路径 |
 | `LEDGER_NONCE_TTL_SECONDS` | `120` | 握手 nonce 有效期 |
 | `LEDGER_REQUEST_TS_WINDOW_SECONDS` | `300` | 加密请求时间窗 |
@@ -112,6 +121,14 @@ frontend/
 ## 接口文档
 
 启动后访问 `/api/docs`（Swagger UI），前端站内文档在 `/docs`。
+
+开发测试：
+
+```bash
+cd backend
+../.venv/bin/pip install -r requirements-dev.txt
+../.venv/bin/pytest -q
+```
 
 ## 说明
 

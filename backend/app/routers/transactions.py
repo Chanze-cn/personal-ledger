@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import datetime as dt
+import csv
+import io
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -14,6 +16,8 @@ from ..models import Category, Transaction, User
 from ..schemas import (
     MutationResult,
     TransactionIn,
+    TransactionImportRequest,
+    TransactionImportRow,
     TransactionOut,
     TransactionPage,
     TransactionUpdate,
@@ -124,6 +128,90 @@ def list_transactions(
         total_expense=to_yuan(sums.get("expense", 0)),
         total_income=to_yuan(sums.get("income", 0)),
     )
+
+
+@router.get("/export", summary="导出流水 CSV")
+def export_transactions(
+    start: dt.date | None = None,
+    end: dt.date | None = None,
+    kind: str | None = None,
+    category_id: int | None = None,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    """导出当前账号流水；旧接口不变，导出是新增能力。"""
+    conditions = [Transaction.user_id == user.id]
+    if start:
+        conditions.append(Transaction.occurred_on >= start)
+    if end:
+        conditions.append(Transaction.occurred_on <= end)
+    if kind in {"expense", "income"}:
+        conditions.append(Transaction.kind == kind)
+    if category_id:
+        child_ids = db.scalars(
+            select(Category.id).where(
+                Category.user_id == user.id, Category.parent_id == category_id
+            )
+        ).all()
+        conditions.append(Transaction.category_id.in_([category_id, *child_ids]))
+
+    rows = db.scalars(
+        select(Transaction)
+        .where(*conditions)
+        .order_by(Transaction.occurred_on.asc(), Transaction.id.asc())
+    ).all()
+    output = io.StringIO()
+    writer = csv.writer(output, lineterminator="\n")
+    writer.writerow(["occurred_on", "amount", "category_id", "category_name", "kind", "note"])
+    for txn in rows:
+        writer.writerow(
+            [
+                txn.occurred_on.isoformat(),
+                f"{to_yuan(txn.amount_cents):.2f}",
+                txn.category_id,
+                txn.category.name if txn.category else "已删除品类",
+                txn.kind,
+                txn.note or "",
+            ]
+        )
+    filename = f"ledger-transactions-{dt.date.today().isoformat()}.csv"
+    return Response(
+        content="\ufeff" + output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/import", summary="批量导入流水")
+def import_transactions(
+    payload: TransactionImportRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """批量写入并只提交一次切片重算，避免导入大量流水时任务爆炸。"""
+    resolved: list[tuple[TransactionImportRow, Category]] = []
+    min_date: dt.date | None = None
+    for row in payload.rows:
+        category = _resolve_leaf_category(db, user, row.category_id)
+        resolved.append((row, category))
+        min_date = row.occurred_on if min_date is None else min(min_date, row.occurred_on)
+
+    with WRITE_LOCK:
+        for row, category in resolved:
+            db.add(
+                Transaction(
+                    user_id=user.id,
+                    category_id=category.id,
+                    kind=category.kind,
+                    amount_cents=int(round(row.amount * 100)),
+                    occurred_on=row.occurred_on,
+                    note=row.note.strip(),
+                )
+            )
+        db.commit()
+
+    job_id = patch_rollup_job(user.id, min_date, "批量导入流水")
+    return {"created": len(resolved), "job_id": job_id, "message": "流水已导入，正在重算切片"}
 
 
 @router.post("", response_model=MutationResult, summary="记一笔（异步更新切片）")
