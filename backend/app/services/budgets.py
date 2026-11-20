@@ -182,6 +182,14 @@ def serialize_budget(
     used = to_yuan(used_cents)
     remaining = round(amount - used, 2)
     ratio = round(used / amount * 100, 1) if amount else 0.0
+    if not budget.is_active:
+        alert_level, alert_message = "inactive", "预算已停用"
+    elif ratio >= 100:
+        alert_level, alert_message = "danger", "已超出预算"
+    elif ratio >= 80:
+        alert_level, alert_message = "warning", "已使用 80% 以上额度"
+    else:
+        alert_level, alert_message = "normal", "预算执行正常"
 
     total_days = (end - start).days + 1
     if today < start:
@@ -222,6 +230,8 @@ def serialize_budget(
         "used": used,
         "remaining": remaining,
         "ratio": ratio,
+        "alert_level": alert_level,
+        "alert_message": alert_message,
         "days_left": days_left,
         "daily_allowance": daily_allowance,
         "is_active": budget.is_active,
