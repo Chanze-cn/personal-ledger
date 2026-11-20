@@ -121,6 +121,7 @@ backend/tests/             # 后端回归测试（pytest）
 | `LEDGER_REQUEST_TS_WINDOW_SECONDS` | `300` | 加密请求时间窗 |
 | `LEDGER_DAILY_JOB_HOUR` / `LEDGER_DAILY_JOB_MINUTE` | `0` / `5` | 日切片执行时间 |
 | `LEDGER_CATCHUP_INTERVAL_MINUTES` | `15` | 补偿巡检间隔 |
+| `LEDGER_SCHEDULER_ENABLED` | `true` | 多进程部署时可关闭 Web 进程内置调度器，避免重复调度 |
 
 ## 接口文档
 

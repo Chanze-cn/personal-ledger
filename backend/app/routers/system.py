@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Response
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from ..config import APP_NAME, CATCHUP_INTERVAL_MINUTES, DAILY_JOB_HOUR, DAILY_JOB_MINUTE
+from ..config import APP_NAME, CATCHUP_INTERVAL_MINUTES, DAILY_JOB_HOUR, DAILY_JOB_MINUTE, SCHEDULER_ENABLED
 from ..database import WRITE_LOCK, get_db
 from ..deps import get_current_user
 from ..models import (
@@ -101,6 +101,7 @@ def system_info(
         "period_rows": int(period_rows),
         "budget_count": int(budget_count),
         "scheduler": {
+            "enabled": SCHEDULER_ENABLED,
             "daily_rollup_at": f"{DAILY_JOB_HOUR:02d}:{DAILY_JOB_MINUTE:02d}",
             "catchup_every_minutes": CATCHUP_INTERVAL_MINUTES,
             "desc": "每天定时对流水做日切片；每 15 分钟巡检缺失切片并自动补算",

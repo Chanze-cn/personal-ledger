@@ -225,7 +225,7 @@ export interface SystemInfo {
   daily_rows: number;
   period_rows: number;
   budget_count: number;
-  scheduler: { daily_rollup_at: string; catchup_every_minutes: number; desc: string };
+  scheduler: { enabled: boolean; daily_rollup_at: string; catchup_every_minutes: number; desc: string };
   transport: string;
   last_job: { id: number; name: string; status: string; finished_at: string | null } | null;
 }

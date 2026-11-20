@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .config import APP_NAME, APP_TAGLINE, AUTH_KEY_PATH, FRONTEND_DIST
+from .config import APP_NAME, APP_TAGLINE, AUTH_KEY_PATH, FRONTEND_DIST, SCHEDULER_ENABLED
 from .clock import now as local_now
 from .crypto_transport import TransportCrypto
 from .database import engine, ensure_schema
@@ -26,12 +26,14 @@ async def lifespan(app: FastAPI):
     ensure_schema()
     Base.metadata.create_all(engine)
     app.state.crypto = TransportCrypto(AUTH_KEY_PATH)
-    await asyncio.to_thread(schedule_startup_calibration)
-    scheduler.start()
+    if SCHEDULER_ENABLED:
+        await asyncio.to_thread(schedule_startup_calibration)
+        scheduler.start()
     try:
         yield
     finally:
-        await scheduler.stop()
+        if SCHEDULER_ENABLED:
+            await scheduler.stop()
 
 
 app = FastAPI(
