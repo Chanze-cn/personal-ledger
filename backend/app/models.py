@@ -106,6 +106,36 @@ class Transaction(Base):
     category: Mapped[Category] = relationship(lazy="joined")
 
 
+class RecurringTransaction(Base):
+    """周期流水模板；生成记录单独保存以保证重复执行幂等。"""
+
+    __tablename__ = "recurring_transactions"
+    __table_args__ = (Index("ix_recurring_user_next", "user_id", "is_active", "next_run_on"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    category_id: Mapped[int] = mapped_column(ForeignKey("categories.id"))
+    kind: Mapped[str] = mapped_column(String(8))
+    amount_cents: Mapped[int] = mapped_column(Integer)
+    note: Mapped[str] = mapped_column(String(255), default="")
+    frequency: Mapped[str] = mapped_column(String(16))  # daily/weekly/monthly/yearly
+    next_run_on: Mapped[dt.date] = mapped_column(Date, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=now)
+
+    category: Mapped[Category] = relationship(lazy="joined")
+
+
+class RecurringOccurrence(Base):
+    __tablename__ = "recurring_occurrences"
+    __table_args__ = (UniqueConstraint("template_id", "occurred_on", name="uq_recurring_occurrence"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    template_id: Mapped[int] = mapped_column(ForeignKey("recurring_transactions.id", ondelete="CASCADE"), index=True)
+    transaction_id: Mapped[int] = mapped_column(ForeignKey("transactions.id", ondelete="CASCADE"), unique=True)
+    occurred_on: Mapped[dt.date] = mapped_column(Date)
+
+
 class RollupDaily(Base):
     """日切片：每个用户、每天、每个品类、每个收支方向的聚合。"""
 

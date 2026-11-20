@@ -107,6 +107,41 @@ class TransactionImportRequest(BaseModel):
     rows: list[TransactionImportRow] = Field(min_length=1, max_length=5000)
 
 
+class RecurringIn(BaseModel):
+    category_id: int
+    amount: float = Field(gt=0, le=100_000_000)
+    note: str = Field(default="", max_length=255)
+    frequency: str = Field(pattern="^(daily|weekly|monthly|yearly)$")
+    next_run_on: dt.date
+
+    @field_validator("amount")
+    @classmethod
+    def _round_amount(cls, value: float) -> float:
+        return round(float(value), 2)
+
+
+class RecurringUpdate(BaseModel):
+    amount: float | None = Field(default=None, gt=0, le=100_000_000)
+    note: str | None = Field(default=None, max_length=255)
+    frequency: str | None = Field(default=None, pattern="^(daily|weekly|monthly|yearly)$")
+    next_run_on: dt.date | None = None
+    is_active: bool | None = None
+
+
+class RecurringOut(BaseModel):
+    id: int
+    category_id: int
+    category_name: str
+    category_emoji: str
+    kind: str
+    amount: float
+    note: str
+    frequency: str
+    next_run_on: dt.date
+    is_active: bool
+    generated_count: int
+
+
 class TransactionOut(BaseModel):
     id: int
     category_id: int

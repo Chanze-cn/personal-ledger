@@ -7,6 +7,7 @@ import type {
   Handshake,
   JobRun,
   MutationResult,
+  RecurringTemplate,
   Report,
   SliceRow,
   SystemInfo,
@@ -149,6 +150,17 @@ export const api = {
     request<{ created: number; job_id: number; message: string }>('/transactions/import', {
       method: 'POST',
       body: JSON.stringify({ rows }),
+    }),
+  recurring: () => request<RecurringTemplate[]>('/recurring'),
+  createRecurring: (payload: Record<string, unknown>) =>
+    request<RecurringTemplate>('/recurring', { method: 'POST', body: JSON.stringify(payload) }),
+  updateRecurring: (id: number, payload: Record<string, unknown>) =>
+    request<RecurringTemplate>(`/recurring/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  deleteRecurring: (id: number) =>
+    request<{ ok: boolean; message: string }>(`/recurring/${id}`, { method: 'DELETE' }),
+  generateRecurring: () =>
+    request<{ created: number; from_date: string | null; message: string }>('/recurring/generate', {
+      method: 'POST',
     }),
 
   dashboard: () => request<Dashboard>('/stats/dashboard'),

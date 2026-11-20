@@ -236,6 +236,20 @@ export interface MutationResult {
   transaction: Transaction | null;
 }
 
+export interface RecurringTemplate {
+  id: number;
+  category_id: number;
+  category_name: string;
+  category_emoji: string;
+  kind: 'expense' | 'income';
+  amount: number;
+  note: string;
+  frequency: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  next_run_on: string;
+  is_active: boolean;
+  generated_count: number;
+}
+
 export interface Handshake {
   key_id: string;
   public_key: string;

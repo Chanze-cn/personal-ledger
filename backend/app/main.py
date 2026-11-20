@@ -15,7 +15,7 @@ from .config import APP_NAME, APP_TAGLINE, AUTH_KEY_PATH, FRONTEND_DIST
 from .crypto_transport import TransportCrypto
 from .database import engine, ensure_schema
 from .models import Base
-from .routers import auth, budgets, categories, jobs, stats, system, transactions
+from .routers import auth, budgets, categories, jobs, recurring, stats, system, transactions
 from .services.jobs import schedule_startup_calibration
 from .services.scheduler import scheduler
 
@@ -62,6 +62,7 @@ api = APIRouter(prefix="/api")
 api.include_router(auth.router)
 api.include_router(categories.router)
 api.include_router(transactions.router)
+api.include_router(recurring.router)
 api.include_router(stats.router)
 api.include_router(budgets.router)
 api.include_router(jobs.router)

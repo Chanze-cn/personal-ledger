@@ -47,6 +47,11 @@ class RollupScheduler:
                 delay = seconds_until(DAILY_JOB_HOUR, DAILY_JOB_MINUTE)
                 await asyncio.sleep(delay)
                 await asyncio.to_thread(schedule_daily_rollup)
+                # Generate due recurring transactions at the same daily
+                # boundary. The occurrence table makes retries idempotent.
+                from .recurring import generate_due_for_all_users
+
+                await asyncio.to_thread(generate_due_for_all_users)
             except asyncio.CancelledError:
                 raise
             except Exception:  # noqa: BLE001
