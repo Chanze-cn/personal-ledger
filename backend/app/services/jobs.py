@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from ..database import SessionLocal, WRITE_LOCK
 from ..models import JobRun, User, now
+from ..clock import today as local_today
 from .rollup import recalc_all, recalc_from, recalc_range_summary
 
 EXECUTOR = ThreadPoolExecutor(max_workers=3, thread_name_prefix="ledger-job")
@@ -172,6 +173,27 @@ def patch_rollup_job(
     user_id: int, from_date: dt.date, reason: str, transaction_id: int | None = None
 ) -> int:
     """流水变动后提交一次从 from_date 起的切片重算。"""
+    # If a previous recalculation is still queued, it will see all committed
+    # transactions before it starts. Reuse it when its range already covers
+    # this request; running jobs are deliberately excluded because they may
+    # have already taken their source snapshot.
+    with WRITE_LOCK, SessionLocal() as db:
+        queued = db.scalars(
+            select(JobRun)
+            .where(
+                JobRun.user_id == user_id,
+                JobRun.job_type == "rollup_recalc",
+                JobRun.status == "pending",
+            )
+            .order_by(JobRun.id.desc())
+        ).all()
+        for job in queued:
+            try:
+                queued_from = dt.date.fromisoformat(json.loads(job.payload)["from_date"])
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                continue
+            if queued_from <= from_date:
+                return job.id
     label = reason if len(reason) <= 40 else reason[:40] + "…"
     return submit_job(
         user_id=user_id,
@@ -215,12 +237,12 @@ def _active_users() -> list[User]:
 
 def schedule_startup_calibration() -> list[int]:
     """启动校准：为每个启用用户补一次昨天的日切片。"""
-    target = dt.date.today() - dt.timedelta(days=1)
+    target = local_today() - dt.timedelta(days=1)
     return [daily_rollup_job(user.id, target, trigger="system") for user in _active_users()]
 
 
 def schedule_daily_rollup() -> list[int]:
-    target = dt.date.today()
+    target = local_today()
     return [daily_rollup_job(user.id, target, trigger="schedule") for user in _active_users()]
 
 
@@ -228,7 +250,7 @@ def schedule_catchup() -> list[int]:
     """补偿巡检：当日有流水但缺日切片的用户，自动补一个任务。"""
     from ..models import RollupDaily, Transaction
 
-    today = dt.date.today()
+    today = local_today()
     job_ids: list[int] = []
     for user in _active_users():
         with SessionLocal() as db:

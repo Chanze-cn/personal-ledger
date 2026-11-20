@@ -7,6 +7,7 @@ import type {
   Handshake,
   JobRun,
   MutationResult,
+  RecurringTemplate,
   Report,
   SliceRow,
   SystemInfo,
@@ -137,6 +138,30 @@ export const api = {
     }),
   deleteTransaction: (id: number) =>
     request<MutationResult>(`/transactions/${id}`, { method: 'DELETE' }),
+  exportTransactions: async (params: Record<string, string | number | undefined> = {}) => {
+    const token = getToken();
+    const response = await fetch(`/api/transactions/export${qs(params)}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+    if (!response.ok) throw new ApiError('导出失败', response.status);
+    return response.blob();
+  },
+  importTransactions: (rows: Array<{ category_id: number; amount: number; occurred_on: string; note: string }>) =>
+    request<{ created: number; job_id: number; message: string }>('/transactions/import', {
+      method: 'POST',
+      body: JSON.stringify({ rows }),
+    }),
+  recurring: () => request<RecurringTemplate[]>('/recurring'),
+  createRecurring: (payload: Record<string, unknown>) =>
+    request<RecurringTemplate>('/recurring', { method: 'POST', body: JSON.stringify(payload) }),
+  updateRecurring: (id: number, payload: Record<string, unknown>) =>
+    request<RecurringTemplate>(`/recurring/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  deleteRecurring: (id: number) =>
+    request<{ ok: boolean; message: string }>(`/recurring/${id}`, { method: 'DELETE' }),
+  generateRecurring: () =>
+    request<{ created: number; from_date: string | null; message: string }>('/recurring/generate', {
+      method: 'POST',
+    }),
 
   dashboard: () => request<Dashboard>('/stats/dashboard'),
   report: (period: 'week' | 'month' | 'year', anchor: string) =>
@@ -169,6 +194,14 @@ export const api = {
     request<{ job_id: number; message: string }>('/jobs/daily', { method: 'POST' }),
 
   systemInfo: () => request<SystemInfo>('/system/info'),
+  exportAccountData: async () => {
+    const token = getToken();
+    const response = await fetch('/api/system/export', {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+    if (!response.ok) throw new ApiError('备份导出失败', response.status);
+    return response.blob();
+  },
   demoData: () =>
     request<{ job_id: number; created: number; message: string }>('/system/demo-data', {
       method: 'POST',

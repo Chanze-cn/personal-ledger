@@ -11,11 +11,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .config import APP_NAME, APP_TAGLINE, AUTH_KEY_PATH, FRONTEND_DIST
+from .config import APP_NAME, APP_TAGLINE, AUTH_KEY_PATH, FRONTEND_DIST, SCHEDULER_ENABLED
+from .clock import now as local_now
 from .crypto_transport import TransportCrypto
 from .database import engine, ensure_schema
 from .models import Base
-from .routers import auth, budgets, categories, jobs, stats, system, transactions
+from .routers import auth, budgets, categories, jobs, recurring, stats, system, transactions
 from .services.jobs import schedule_startup_calibration
 from .services.scheduler import scheduler
 
@@ -25,12 +26,14 @@ async def lifespan(app: FastAPI):
     ensure_schema()
     Base.metadata.create_all(engine)
     app.state.crypto = TransportCrypto(AUTH_KEY_PATH)
-    await asyncio.to_thread(schedule_startup_calibration)
-    scheduler.start()
+    if SCHEDULER_ENABLED:
+        await asyncio.to_thread(schedule_startup_calibration)
+        scheduler.start()
     try:
         yield
     finally:
-        await scheduler.stop()
+        if SCHEDULER_ENABLED:
+            await scheduler.stop()
 
 
 app = FastAPI(
@@ -62,6 +65,7 @@ api = APIRouter(prefix="/api")
 api.include_router(auth.router)
 api.include_router(categories.router)
 api.include_router(transactions.router)
+api.include_router(recurring.router)
 api.include_router(stats.router)
 api.include_router(budgets.router)
 api.include_router(jobs.router)
@@ -70,7 +74,7 @@ api.include_router(system.router)
 
 @api.get("/health", tags=["system"], summary="健康检查")
 def health() -> dict:
-    return {"status": "ok", "time": dt.datetime.now().isoformat(timespec="seconds")}
+    return {"status": "ok", "time": local_now().isoformat(timespec="seconds")}
 
 
 @api.get("/meta", tags=["system"], summary="公开产品信息")

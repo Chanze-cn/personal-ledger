@@ -195,6 +195,8 @@ def change_password(
         raise HTTPException(status_code=400, detail="原密码与新密码不能为空")
     if len(new_password) < 6:
         raise HTTPException(status_code=400, detail="新密码至少 6 位")
+    if len(new_password) > MAX_PASSWORD_LENGTH:
+        raise HTTPException(status_code=400, detail="新密码不能超过 128 位")
     if not verify_password(old_password, user.password_hash):
         raise HTTPException(status_code=400, detail="原密码不正确")
     with WRITE_LOCK:

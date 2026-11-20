@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Clock3,
   Database,
+  Download,
   Fingerprint,
   LogOut,
   ShieldCheck,
@@ -120,6 +121,21 @@ export default function Settings() {
     }
   };
 
+  const exportBackup = async () => {
+    try {
+      const blob = await api.exportAccountData();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'ledger-backup.json';
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.push('账号备份已导出');
+    } catch (error) {
+      toast.push((error as Error).message, 'error');
+    }
+  };
+
   const info = system.data;
 
   return (
@@ -211,7 +227,7 @@ export default function Settings() {
               />
             </div>
             <div>
-              <label className="label">新密码（至少 6 位）</label>
+              <label className="label">新密码（6–128 位）</label>
               <input
                 type="password"
                 value={newPassword}
@@ -261,6 +277,18 @@ export default function Settings() {
           </div>
 
           <div className="mt-4 space-y-3">
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 px-3.5 py-3">
+              <div>
+                <p className="text-[12.5px] font-medium text-slate-700">导出账号备份</p>
+                <p className="mt-0.5 text-[11px] text-slate-400">
+                  导出品类、流水和预算 JSON，不会修改当前数据
+                </p>
+              </div>
+              <Button variant="ghost" onClick={() => void exportBackup()} className="shrink-0">
+                <Download size={14} />
+                导出
+              </Button>
+            </div>
             <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 px-3.5 py-3">
               <div>
                 <p className="text-[12.5px] font-medium text-slate-700">生成示例数据</p>

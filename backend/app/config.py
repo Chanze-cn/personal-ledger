@@ -13,7 +13,11 @@ DB_PATH = DATA_DIR / "ledger.db"
 DATABASE_URL = os.getenv("LEDGER_DATABASE_URL", f"sqlite:///{DB_PATH}")
 
 SECRET_KEY = os.getenv("LEDGER_SECRET_KEY", "ledger-local-dev-secret-key-please-change")
+ENVIRONMENT = os.getenv("LEDGER_ENV", "development").strip().lower()
+if ENVIRONMENT in {"production", "prod"} and SECRET_KEY == "ledger-local-dev-secret-key-please-change":
+    raise RuntimeError("LEDGER_SECRET_KEY must be set when LEDGER_ENV=production")
 TOKEN_TTL_HOURS = int(os.getenv("LEDGER_TOKEN_TTL_HOURS", "72"))
+TIMEZONE_NAME = os.getenv("LEDGER_TIMEZONE", "local").strip() or "local"
 
 # 传输加密：RSA 私钥文件（首次启动自动生成，权限 600）
 AUTH_KEY_PATH = Path(os.getenv("LEDGER_AUTH_KEY_PATH", str(DATA_DIR / "auth_key.pem")))
@@ -33,6 +37,9 @@ DAILY_JOB_HOUR = int(os.getenv("LEDGER_DAILY_JOB_HOUR", "0"))
 DAILY_JOB_MINUTE = int(os.getenv("LEDGER_DAILY_JOB_MINUTE", "5"))
 # 补偿巡检间隔（分钟）：当日有流水但没有日切片时自动补算
 CATCHUP_INTERVAL_MINUTES = int(os.getenv("LEDGER_CATCHUP_INTERVAL_MINUTES", "15"))
+SCHEDULER_ENABLED = os.getenv("LEDGER_SCHEDULER_ENABLED", "true").strip().lower() in {
+    "1", "true", "yes", "on"
+}
 
 # 默认品类：两级结构，一级为分组，二级为记账末级；仅作为账号的基础配置，不写流水/预算
 DEFAULT_CATEGORIES: list[dict] = [

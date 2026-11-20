@@ -7,11 +7,12 @@ import datetime as dt
 import traceback
 
 from ..config import CATCHUP_INTERVAL_MINUTES, DAILY_JOB_HOUR, DAILY_JOB_MINUTE
+from ..clock import now as local_now
 from .jobs import schedule_catchup, schedule_daily_rollup
 
 
 def seconds_until(hour: int, minute: int, now: dt.datetime | None = None) -> float:
-    now = now or dt.datetime.now()
+    now = now or local_now()
     target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
     if target <= now:
         target += dt.timedelta(days=1)
@@ -47,6 +48,11 @@ class RollupScheduler:
                 delay = seconds_until(DAILY_JOB_HOUR, DAILY_JOB_MINUTE)
                 await asyncio.sleep(delay)
                 await asyncio.to_thread(schedule_daily_rollup)
+                # Generate due recurring transactions at the same daily
+                # boundary. The occurrence table makes retries idempotent.
+                from .recurring import generate_due_for_all_users
+
+                await asyncio.to_thread(generate_due_for_all_users)
             except asyncio.CancelledError:
                 raise
             except Exception:  # noqa: BLE001

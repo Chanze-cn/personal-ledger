@@ -14,6 +14,7 @@ const Budgets = lazy(() => import('./pages/Budgets'));
 const Categories = lazy(() => import('./pages/Categories'));
 const Jobs = lazy(() => import('./pages/Jobs'));
 const Settings = lazy(() => import('./pages/Settings'));
+const Recurring = lazy(() => import('./pages/Recurring'));
 
 function PageFallback() {
   return (
@@ -70,6 +71,7 @@ export default function App() {
         <Route path="categories" element={<Page><Categories /></Page>} />
         <Route path="jobs" element={<Page><Jobs /></Page>} />
         <Route path="settings" element={<Page><Settings /></Page>} />
+        <Route path="recurring" element={<Page><Recurring /></Page>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

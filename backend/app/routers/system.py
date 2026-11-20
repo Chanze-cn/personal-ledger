@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import random
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from ..config import APP_NAME, CATCHUP_INTERVAL_MINUTES, DAILY_JOB_HOUR, DAILY_JOB_MINUTE
+from ..config import APP_NAME, CATCHUP_INTERVAL_MINUTES, DAILY_JOB_HOUR, DAILY_JOB_MINUTE, SCHEDULER_ENABLED
 from ..database import WRITE_LOCK, get_db
 from ..deps import get_current_user
 from ..models import (
@@ -22,6 +23,7 @@ from ..models import (
     User,
 )
 from ..services.jobs import rebuild_job
+from ..clock import now as local_now, today as local_today
 
 router = APIRouter(prefix="/system", tags=["system"])
 
@@ -92,13 +94,14 @@ def system_info(
 
     return {
         "app": APP_NAME,
-        "server_time": dt.datetime.now().isoformat(timespec="seconds"),
-        "today": dt.date.today().isoformat(),
+        "server_time": local_now().isoformat(timespec="seconds"),
+        "today": local_today().isoformat(),
         "txn_count": int(txn_count),
         "daily_rows": int(daily_rows),
         "period_rows": int(period_rows),
         "budget_count": int(budget_count),
         "scheduler": {
+            "enabled": SCHEDULER_ENABLED,
             "daily_rollup_at": f"{DAILY_JOB_HOUR:02d}:{DAILY_JOB_MINUTE:02d}",
             "catchup_every_minutes": CATCHUP_INTERVAL_MINUTES,
             "desc": "每天定时对流水做日切片；每 15 分钟巡检缺失切片并自动补算",
@@ -117,6 +120,60 @@ def system_info(
     }
 
 
+@router.get("/export", summary="导出当前账号 JSON 备份")
+def export_account_data(
+    user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> Response:
+    """导出可长期保存的业务数据快照，不修改任何现有数据。"""
+    categories = db.scalars(
+        select(Category).where(Category.user_id == user.id).order_by(Category.id)
+    ).all()
+    transactions = db.scalars(
+        select(Transaction)
+        .where(Transaction.user_id == user.id)
+        .order_by(Transaction.occurred_on, Transaction.id)
+    ).all()
+    budgets = db.scalars(
+        select(Budget).where(Budget.user_id == user.id).order_by(Budget.id)
+    ).all()
+    bundle = {
+        "format_version": 1,
+        "exported_at": local_now().isoformat(timespec="seconds"),
+        "user": {
+            "username": user.username,
+            "display_name": user.display_name,
+            "avatar_emoji": user.avatar_emoji,
+            "currency": user.currency,
+        },
+        "categories": [
+            {"id": item.id, "parent_id": item.parent_id, "name": item.name, "emoji": item.emoji,
+             "kind": item.kind, "color": item.color, "sort_order": item.sort_order,
+             "is_archived": item.is_archived}
+            for item in categories
+        ],
+        "transactions": [
+            {"id": item.id, "category_id": item.category_id, "kind": item.kind,
+             "amount_cents": item.amount_cents, "occurred_on": item.occurred_on.isoformat(),
+             "note": item.note or ""}
+            for item in transactions
+        ],
+        "budgets": [
+            {"id": item.id, "parent_id": item.parent_id, "category_id": item.category_id,
+             "name": item.name, "kind": item.kind, "period_type": item.period_type,
+             "period_days": item.period_days,
+             "anchor_date": item.anchor_date.isoformat() if item.anchor_date else None,
+             "amount_cents": item.amount_cents, "is_active": item.is_active}
+            for item in budgets
+        ],
+    }
+    filename = f"ledger-backup-{local_today().isoformat()}.json"
+    return Response(
+        content=json.dumps(bundle, ensure_ascii=False, indent=2),
+        media_type="application/json; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.post("/demo-data", summary="生成示例数据（40 天，含两级品类与示例预算）")
 def generate_demo_data(
     user: User = Depends(get_current_user), db: Session = Depends(get_db)
@@ -127,7 +184,7 @@ def generate_demo_data(
     by_name: dict[tuple[str, str], Category] = {(c.name, c.kind): c for c in categories}
 
     rng = random.Random(20261116)
-    today = dt.date.today()
+    today = local_today()
     created = 0
     budgets_created = 0
     with WRITE_LOCK:

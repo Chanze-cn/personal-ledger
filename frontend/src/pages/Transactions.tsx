@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Filter, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { Download, Filter, Pencil, Plus, Search, Trash2, Upload } from 'lucide-react';
 import { api } from '../lib/api';
+import { parseCsv } from '../lib/csv';
 import { money } from '../lib/format';
 import { useDebounced, useQuery } from '../lib/hooks';
 import type { Transaction } from '../lib/types';
@@ -31,6 +32,7 @@ export default function Transactions() {
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Transaction | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const q = useDebounced(keyword, 350);
   const categoriesQuery = useQuery(() => api.categories(false, true), []);
@@ -76,6 +78,69 @@ export default function Transactions() {
     }
   };
 
+  const exportCsv = async () => {
+    try {
+      const blob = await api.exportTransactions({
+        start: start || undefined,
+        end: end || undefined,
+        kind: kind || undefined,
+        category_id: categoryId || undefined,
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'ledger-transactions.csv';
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.push('流水已导出');
+    } catch (error) {
+      toast.push((error as Error).message, 'error');
+    }
+  };
+
+  const importCsv = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setImporting(true);
+    try {
+      const rows = parseCsv((await file.text()).replace(/^\ufeff/, ''));
+      if (rows.length < 2) throw new Error('CSV 没有可导入的数据');
+      const headers = rows[0].map((value) => value.trim());
+      const indexOf = (name: string) => headers.indexOf(name);
+      const dateIndex = indexOf('occurred_on');
+      const amountIndex = indexOf('amount');
+      const categoryIndex = indexOf('category_id');
+      const noteIndex = indexOf('note');
+      if ([dateIndex, amountIndex, categoryIndex].some((index) => index < 0)) {
+        throw new Error('CSV 必须包含 occurred_on、amount、category_id 列');
+      }
+      const imported = rows.slice(1).map((row, rowIndex) => {
+        const amount = Number(row[amountIndex]);
+        const categoryId = Number(row[categoryIndex]);
+        const occurredOn = row[dateIndex]?.trim();
+        if (!occurredOn || !Number.isFinite(amount) || amount <= 0 || !Number.isInteger(categoryId)) {
+          throw new Error(`第 ${rowIndex + 2} 行数据无效`);
+        }
+        return {
+          occurred_on: occurredOn,
+          amount: Number(amount.toFixed(2)),
+          category_id: categoryId,
+          note: noteIndex >= 0 ? row[noteIndex] ?? '' : '',
+        };
+      });
+      if (imported.length > 5000) throw new Error('单次最多导入 5000 笔流水');
+      const result = await api.importTransactions(imported);
+      toast.push(`${result.created} 笔流水已导入，统计正在后台重算`);
+      bump();
+      reload();
+    } catch (error) {
+      toast.push((error as Error).message, 'error');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const total = data?.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const items = data?.items ?? [];
@@ -86,10 +151,21 @@ export default function Transactions() {
         title="流水明细"
         desc="支持日期、类型、品类与备注搜索，编辑会级联重算后续切片"
         actions={
-          <Link to="/app/bookkeep" className="btn btn-primary">
-            <Plus size={16} />
-            记一笔
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <input id="transaction-import" type="file" accept=".csv,text/csv" className="hidden" onChange={importCsv} />
+            <label htmlFor="transaction-import" className="btn btn-ghost cursor-pointer">
+              <Upload size={15} />
+              {importing ? '导入中…' : '导入 CSV'}
+            </label>
+            <button type="button" className="btn btn-ghost" onClick={() => void exportCsv()}>
+              <Download size={15} />
+              导出 CSV
+            </button>
+            <Link to="/app/bookkeep" className="btn btn-primary">
+              <Plus size={16} />
+              记一笔
+            </Link>
+          </div>
         }
       />
 

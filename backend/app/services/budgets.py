@@ -16,6 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..models import Budget, Category, Transaction
+from ..clock import today as local_today
 from .rollup import period_end, period_start
 from .stats import to_yuan
 
@@ -23,7 +24,7 @@ PERIOD_LABELS = {"day": "每日", "week": "每周", "month": "每月", "year": "
 
 
 def budget_window(budget: Budget, today: dt.date | None = None) -> tuple[dt.date, dt.date]:
-    today = today or dt.date.today()
+    today = today or local_today()
     period_type = budget.period_type
     if period_type == "day":
         return today, today
@@ -164,7 +165,7 @@ def serialize_budget(
     categories: dict[int, Category] | None = None,
     today: dt.date | None = None,
 ) -> dict:
-    today = today or dt.date.today()
+    today = today or local_today()
     categories = categories or {}
     children = children or []
     start, end = budget_window(budget, today)
@@ -182,6 +183,14 @@ def serialize_budget(
     used = to_yuan(used_cents)
     remaining = round(amount - used, 2)
     ratio = round(used / amount * 100, 1) if amount else 0.0
+    if not budget.is_active:
+        alert_level, alert_message = "inactive", "预算已停用"
+    elif ratio >= 100:
+        alert_level, alert_message = "danger", "已超出预算"
+    elif ratio >= 80:
+        alert_level, alert_message = "warning", "已使用 80% 以上额度"
+    else:
+        alert_level, alert_message = "normal", "预算执行正常"
 
     total_days = (end - start).days + 1
     if today < start:
@@ -222,6 +231,8 @@ def serialize_budget(
         "used": used,
         "remaining": remaining,
         "ratio": ratio,
+        "alert_level": alert_level,
+        "alert_message": alert_message,
         "days_left": days_left,
         "daily_allowance": daily_allowance,
         "is_active": budget.is_active,
@@ -237,7 +248,7 @@ def serialize_budget(
 def list_budget_groups(
     db: Session, user_id: int, kind: str | None = None, today: dt.date | None = None
 ) -> dict:
-    today = today or dt.date.today()
+    today = today or local_today()
     statement = select(Budget).where(Budget.user_id == user_id, Budget.is_active.is_(True))
     if kind:
         statement = statement.where(Budget.kind == kind)

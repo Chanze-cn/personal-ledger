@@ -13,6 +13,7 @@ from ..deps import get_current_user
 from ..models import JobRun, User
 from ..schemas import JobOut
 from ..services.jobs import daily_rollup_job, job_type_label, rebuild_job
+from ..clock import today as local_today
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -89,5 +90,5 @@ def trigger_rebuild(
 def trigger_daily(
     user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> dict:
-    job_id = daily_rollup_job(user.id, dt.date.today(), trigger="manual")
+    job_id = daily_rollup_job(user.id, local_today(), trigger="manual")
     return {"job_id": job_id, "message": "当日切片任务已提交"}

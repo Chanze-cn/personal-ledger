@@ -225,7 +225,7 @@ export interface SystemInfo {
   daily_rows: number;
   period_rows: number;
   budget_count: number;
-  scheduler: { daily_rollup_at: string; catchup_every_minutes: number; desc: string };
+  scheduler: { enabled: boolean; daily_rollup_at: string; catchup_every_minutes: number; desc: string };
   transport: string;
   last_job: { id: number; name: string; status: string; finished_at: string | null } | null;
 }
@@ -234,6 +234,20 @@ export interface MutationResult {
   job_id: number;
   message: string;
   transaction: Transaction | null;
+}
+
+export interface RecurringTemplate {
+  id: number;
+  category_id: number;
+  category_name: string;
+  category_emoji: string;
+  kind: 'expense' | 'income';
+  amount: number;
+  note: string;
+  frequency: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  next_run_on: string;
+  is_active: boolean;
+  generated_count: number;
 }
 
 export interface Handshake {

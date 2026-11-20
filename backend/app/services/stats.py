@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..models import Category, RollupDaily, RollupPeriod
+from ..clock import today as local_today
 from .rollup import period_end, period_label, period_start, shift_period
 
 WEEKDAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
@@ -187,7 +188,7 @@ def trend(
 
         points = []
         cursor = period_start(granularity, start)
-        last = period_start(granularity, min(end, dt.date.today() + dt.timedelta(days=370)))
+        last = period_start(granularity, min(end, local_today() + dt.timedelta(days=370)))
         while cursor <= last:
             if granularity == "week":
                 label = f"{cursor.month}/{cursor.day}"

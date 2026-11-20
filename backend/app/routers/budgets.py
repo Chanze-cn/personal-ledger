@@ -19,6 +19,7 @@ from ..deps import get_current_user
 from ..models import Budget, Category, User
 from ..schemas import BudgetIn, BudgetUpdate
 from ..services.budgets import list_budget_groups, serialize_budget
+from ..clock import today as local_today
 
 router = APIRouter(prefix="/budgets", tags=["budgets"])
 
@@ -88,7 +89,7 @@ def create_budget(
     else:
         period_type = payload.period_type
         period_days = payload.period_days if payload.period_type == "custom" else None
-        anchor_date = payload.anchor_date or dt.date.today()
+        anchor_date = payload.anchor_date or local_today()
         kind = category.kind if category is not None else payload.kind
 
     if period_type == "custom" and not period_days:
@@ -128,9 +129,39 @@ def update_budget(
     children = list(
         db.scalars(select(Budget).where(Budget.parent_id == budget.id)).all()
     )
-    category = _get_category(db, user, payload.category_id) if payload.category_id else None
+    fields = payload.model_fields_set
+    current_parent = db.get(Budget, budget.parent_id) if budget.parent_id else None
+    requested_category = (
+        _get_category(db, user, payload.category_id)
+        if "category_id" in fields and payload.category_id is not None
+        else (None if "category_id" in fields else db.get(Category, budget.category_id))
+    )
+    requested_parent = (
+        _get_parent(db, user, payload.parent_id)
+        if "parent_id" in fields
+        else current_parent
+    )
+
+    # A total budget with children cannot be converted into a category budget;
+    # doing so would orphan the existing child budgets.
+    changing_shape = (
+        (requested_parent.id if requested_parent else None)
+        != (current_parent.id if current_parent else None)
+        or (requested_category.id if requested_category else None)
+        != budget.category_id
+    )
+    if children and changing_shape:
+        raise HTTPException(status_code=400, detail="该总预算下已有子预算，请先删除子预算再修改归属")
+    if requested_parent is not None:
+        if requested_category is None:
+            raise HTTPException(status_code=400, detail="品类子预算必须指定品类")
+        if requested_category.kind != requested_parent.kind:
+            raise HTTPException(status_code=400, detail="子预算的收支类型必须与总预算一致")
+        _ensure_unique_child(db, user, requested_parent.id, requested_category.id, budget.id)
 
     with WRITE_LOCK:
+        budget.parent_id = requested_parent.id if requested_parent else None
+        budget.category_id = requested_category.id if requested_category else None
         if payload.name is not None:
             budget.name = payload.name.strip()
         if payload.amount is not None:
@@ -138,7 +169,13 @@ def update_budget(
         if payload.is_active is not None:
             budget.is_active = payload.is_active
 
-        if budget.parent_id is None and budget.category_id is None:
+        if budget.parent_id is not None:
+            # Child budgets always inherit their parent window and kind.
+            budget.period_type = requested_parent.period_type
+            budget.period_days = requested_parent.period_days
+            budget.anchor_date = requested_parent.anchor_date
+            budget.kind = requested_parent.kind
+        elif budget.category_id is None:
             # 总预算：周期改动需要同步到所有子预算
             if payload.period_type and payload.period_type != budget.period_type:
                 if children:
@@ -169,16 +206,16 @@ def update_budget(
             if payload.anchor_date is not None:
                 budget.anchor_date = payload.anchor_date
 
-        if payload.kind is not None and budget.category_id is None and not children:
+        if budget.category_id is not None and budget.parent_id is None:
+            budget.kind = requested_category.kind
+        elif payload.kind is not None and budget.category_id is None and not children:
             budget.kind = payload.kind
 
         db.add(budget)
         db.commit()
         db.refresh(budget)
 
-    if category is None and budget.category_id:
-        category = db.get(Category, budget.category_id)
-    return serialize_budget(db, budget, category)
+    return serialize_budget(db, budget, requested_category)
 
 
 @router.delete("/{budget_id}", summary="删除预算（总预算会级联删除子预算）")

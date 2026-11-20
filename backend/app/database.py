@@ -10,9 +10,10 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from .config import DATABASE_URL
 
+_is_sqlite = DATABASE_URL.startswith("sqlite")
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False, "timeout": 30},
+    connect_args={"check_same_thread": False, "timeout": 30} if _is_sqlite else {},
     pool_pre_ping=True,
     future=True,
 )
@@ -20,6 +21,8 @@ engine = create_engine(
 
 @event.listens_for(engine, "connect")
 def _set_sqlite_pragma(dbapi_connection, _record):
+    if not _is_sqlite:
+        return
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA synchronous=NORMAL")
@@ -64,11 +67,26 @@ CREATE TABLE categories_new (
 
 def ensure_schema() -> None:
     """启动时做最小的结构迁移，保证新旧数据库都能跑同一份代码。"""
+    if not _is_sqlite:
+        # External databases use a real migration tool in deployment; the
+        # SQLite table-rebuild compatibility path must never run there.
+        return
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE IF NOT EXISTS schema_migrations "
+            "(version INTEGER PRIMARY KEY, applied_at DATETIME NOT NULL)"
+        )
+
     inspector = inspect(engine)
     if not inspector.has_table("categories"):
         return
     columns = {column["name"] for column in inspector.get_columns("categories")}
     if "parent_id" in columns:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "INSERT OR IGNORE INTO schema_migrations(version, applied_at) "
+                "VALUES (1, CURRENT_TIMESTAMP)"
+            )
         return
 
     raw = engine.raw_connection()
@@ -90,6 +108,11 @@ def ensure_schema() -> None:
         cursor.execute("CREATE INDEX ix_category_user_kind ON categories (user_id, kind)")
         raw.commit()
         cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute(
+            "INSERT OR IGNORE INTO schema_migrations(version, applied_at) "
+            "VALUES (1, CURRENT_TIMESTAMP)"
+        )
+        raw.commit()
     except Exception:
         raw.rollback()
         raise

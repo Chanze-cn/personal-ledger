@@ -12,6 +12,7 @@ from ..database import get_db
 from ..deps import get_current_user
 from ..models import JobRun, Transaction, User
 from ..services import stats as stats_service
+from ..clock import today as local_today
 from ..services.budgets import list_budget_groups
 from ..services.rollup import period_end, period_start, shift_period
 from .transactions import serialize_transaction
@@ -20,7 +21,7 @@ router = APIRouter(prefix="/stats", tags=["stats"])
 
 
 def _resolve_range(start: dt.date | None, end: dt.date | None) -> tuple[dt.date, dt.date]:
-    end_date = end or dt.date.today()
+    end_date = end or local_today()
     start_date = start or end_date.replace(day=1)
     if start_date > end_date:
         raise HTTPException(status_code=400, detail="开始日期不能晚于结束日期")
@@ -71,7 +72,7 @@ def report(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    return stats_service.report(db, user.id, period, anchor or dt.date.today())
+    return stats_service.report(db, user.id, period, anchor or local_today())
 
 
 @router.get("/slices", summary="统计切片浏览")
@@ -90,7 +91,7 @@ def dashboard(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    today = dt.date.today()
+    today = local_today()
     anchor = anchor or today
     month_start = period_start("month", anchor)
     month_end = period_end("month", month_start)
